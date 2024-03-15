@@ -1,10 +1,37 @@
-from typing import Any, Callable, Sequence, Union
+from typing import Any, Callable, Sequence, Union, TypeVar, Type
 from jaxlie.manifold import rplus, zero_tangents
 import jax
 from typing_extensions import ParamSpec
+from functools import partial
+import chex
 
 AxisName = Any
 P = ParamSpec("P")
+T = TypeVar("T")
+
+
+def jitmethod(fun: Callable[P, Any]) -> Callable[P, Any]:
+    """Decorator for marking methods for JIT compilation."""
+
+    return jax.jit(fun, static_argnums=(0,))
+
+
+def jitclass(cls: T) -> T:
+    """Decorator for registering Lie group dataclasses.
+
+    Sets dimensionality class variables, and marks all methods for JIT compilation.
+    """
+
+    # JIT all methods.
+    for f in filter(
+        lambda f: not f.startswith("_")
+        and callable(getattr(cls, f))
+        and "jit" not in getattr(cls, f).__repr__(),
+        dir(cls),
+    ):
+        setattr(cls, f, jax.jit(getattr(cls, f), static_argnums=(0,)))
+
+    return cls
 
 
 def jacfwd(

@@ -5,8 +5,12 @@ from dataclasses import dataclass
 from overrides import overrides
 from double_integrator import DoubleIntegratorSim
 import matplotlib.pyplot as plt
+from helpers import jitclass
+import jax
+from functools import partial
 
 np.set_printoptions(precision=3, suppress=True, linewidth=200)
+jax.config.update("jax_platforms", "cpu")
 
 
 def vals2state(vals: core.Variables) -> np.ndarray:
@@ -20,17 +24,13 @@ def vals2state(vals: core.Variables) -> np.ndarray:
     return np.vstack(x), np.vstack(u)
 
 
-@dataclass
 class LinearSystem(core.Factor):
-    A: np.ndarray
-    B: np.ndarray
-    Q: np.ndarray
-    R: np.ndarray
-
-    @property
-    @overrides
-    def has_cost(self) -> bool:
-        return True
+    def __init__(self, keys, A, B, Q, R):
+        self.A = A
+        self.B = B
+        self.Q = Q
+        self.R = R
+        super().__init__(keys)
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -48,9 +48,10 @@ class LinearSystem(core.Factor):
         return self.A.shape[0]
 
 
-@dataclass
 class FixConstraint(core.Factor):
-    value: np.ndarray
+    def __init__(self, keys: list[str], value):
+        self.value = value
+        super().__init__(keys)
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
@@ -62,14 +63,10 @@ class FixConstraint(core.Factor):
         return self.value.shape[0]
 
 
-@dataclass
 class FinalCost(core.Factor):
-    Qf: np.ndarray
-
-    @property
-    @overrides
-    def has_cost(self) -> bool:
-        return True
+    def __init__(self, keys: list[str], Qf):
+        self.Qf = Qf
+        super().__init__(keys)
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -77,7 +74,7 @@ class FinalCost(core.Factor):
         return x.T @ self.Qf @ x / 2
 
 
-x0 = np.array([1, 1, -1, 1])
+x0 = np.array([1.0, 1, -1, 1])
 sys = DoubleIntegratorSim(5, 0.1, x0)
 graph = core.Graph()
 vals = core.Variables()
@@ -91,18 +88,26 @@ for i in range(sys.N - 1):
             [f"x{i}", f"x{i+1}", f"u{i}"], sys.A, sys.B, np.eye(4), 0.1 * np.eye(2)
         )
     )
-    vals.add(f"x{i+1}", np.ones(4))
-    vals.add(f"u{i}", np.ones(2))
+    vals.add(f"x{i+1}", np.ones(4, dtype=np.float32))
+    vals.add(f"u{i}", np.ones(2, dtype=np.float32))
 
 graph.add(FinalCost([f"x{sys.N-1}"], 10 * np.eye(4)))
+
+# graph.template = vals
 
 final, info = graph.solve(vals)
 x, u = vals2state(final)
 
-t = np.linspace(0, sys.T, sys.N)
-plt.plot(t, x[:, 0], label="x")
-plt.plot(t, x[:, 1], label="y")
-plt.plot(t, x[:, 2], label="vx")
-plt.plot(t, x[:, 3], label="vy")
-plt.legend()
-plt.show()
+# t = np.linspace(0, sys.T, sys.N)
+# plt.plot(t, x[:, 0], label="x")
+# plt.plot(t, x[:, 1], label="y")
+# plt.plot(t, x[:, 2], label="vx")
+# plt.plot(t, x[:, 3], label="vy")
+# plt.legend()
+# plt.show()
+
+# f = FinalCost(["x0"], 0.1 * np.eye(4))
+# f.cost(vals[f.keys])
+# print()
+# print(f.cost_grad(vals[f.keys]))
+# # print(f.constraints_jac([np.ones(4)]))

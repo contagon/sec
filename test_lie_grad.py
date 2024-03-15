@@ -1,7 +1,7 @@
 import jaxlie
 import jax.numpy as np
 import jax
-from manifold_jacfwd import jacfwd
+from helpers import jacfwd
 
 """
 Conclusion here:

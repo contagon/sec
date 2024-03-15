@@ -1,12 +1,12 @@
 from __future__ import annotations
 import jax.numpy as np
 import jax
-from dataclasses import dataclass, field
-from typing import Any, Union, TypeVar
+from typing import Union, TypeVar
 from collections import OrderedDict
 import jaxlie
 from collections.abc import Iterable
 import cyipopt
+from helpers import jitmethod
 
 GroupType = TypeVar("GroupType", bound=jaxlie.MatrixLieGroup)
 Variable = Union[jax.Array, GroupType]
@@ -38,11 +38,10 @@ def vec2var(vec: np.ndarray, template: Variables) -> Variable:
     return Variables(out)
 
 
-@dataclass
 class Variables:
-    vals: OrderedDict = field(default_factory=OrderedDict)
+    def __init__(self, vals: OrderedDict = OrderedDict()):
+        self.vals = vals
 
-    def __post_init__(self):
         self.dim = 0
         self.idx_start = {}
         self.idx_end = {}
@@ -88,18 +87,11 @@ class Variables:
         return np.concatenate(out)
 
 
-@dataclass
 class Graph:
-    factors: list = field(default_factory=list)
-
-    def __post_init__(self):
-        self.dim_res = 0
-        self.dim_con = 0
-        for factor in self.factors:
-            if (res_dim := factor.residual_dim) is not None:
-                self.dim_res += res_dim
-            if (con_dim := factor.constraints_dim) is not None:
-                self.dim_con += con_dim
+    def __init__(self, factors: list[Factor] = []):
+        self.factors = factors
+        self.dim_res = sum([f.residual_dim for f in self.factors if f.has_res])
+        self.dim_con = sum([f.constraints_dim for f in self.factors if f.has_con])
 
     def add(self, factor):
         self.factors.append(factor)
@@ -108,22 +100,19 @@ class Graph:
         if (con_dim := factor.constraints_dim) is not None:
             self.dim_con += con_dim
 
+    @jitmethod
     def objective(self, x: jax.Array) -> float:
-        cost = 0
         values = vec2var(x, self.template)
-        for factor in self.factors:
-            if factor.has_cost:
-                cost += factor.cost(values[factor.keys])
-        return cost
+        return sum([f.cost(values[f.keys]) for f in self.factors if f.has_cost])
 
+    @jitmethod
     def constraints(self, x: jax.Array) -> np.ndarray:
         all = []
         values = vec2var(x, self.template)
-        for factor in self.factors:
-            if (con := factor.constraints(values[factor.keys])) is not None:
-                all.append(con)
+        all = [f.constraints(values[f.keys]) for f in self.factors if f.has_con]
         return np.concatenate(all)
 
+    @jitmethod
     def gradient(self, x: jax.Array) -> np.ndarray:
         values = vec2var(x, self.template)
         out = np.zeros(values.dim)
@@ -137,25 +126,27 @@ class Graph:
 
         return out
 
+    @jitmethod
     def jacobian(self, x: jax.Array) -> np.ndarray:
         values = vec2var(x, self.template)
         all = []
 
         for factor in self.factors:
-            if factor.constraints_dim is not None:
+            if factor.has_con:
                 jac = factor.constraints_jac(values[factor.keys])
                 for j in jac:
                     all.append(j.flatten())
 
         return np.concatenate(all)
 
+    @jitmethod
     def jacobianstructure(self):
         row_all, col_all = [], []
         row_idx = 0
         for factor in self.factors:
-            num_rows = factor.constraints_dim
-            if num_rows is None:
+            if not factor.has_con:
                 continue
+            num_rows = factor.constraints_dim
             for key in factor.keys:
                 col, row = np.meshgrid(
                     np.arange(*self.template.idx(key)),
@@ -199,12 +190,24 @@ class Graph:
         return vec2var(sol, self.template), info
 
 
-@dataclass
+# @jitclass
 class Factor:
-    keys: list
+    def __init__(self, keys: list[str]):
+        self.keys = keys
+        self.has_cost = type(self).cost != Factor.cost
+        self.has_con = type(self).constraints != Factor.constraints
+        self.has_res = type(self).residual != Factor.residual
+
+        # JIT all methods -> requires all methods to be jit-able
+        for f in filter(
+            lambda f: not f.startswith("_")
+            and callable(getattr(self, f))
+            and "jit" not in getattr(self, f).__repr__(),
+            dir(self),
+        ):
+            setattr(self, f, jax.jit(getattr(self, f)))
 
     # ------------------------- Nonlinear Least-Squares ------------------------- #
-    # TODO: Pursue residual for factors or just use cost below?
     def residual(self, values: list[Variable]) -> np.ndarray:
         pass
 
@@ -219,22 +222,18 @@ class Factor:
         return self._residual_jac(values)
 
     # ------------------------- Costs ------------------------- #
-    @property
-    def has_cost(self) -> bool:
-        return False
-
     def cost(self, values: list[Variable]) -> float:
-        return None
+        pass
 
     def cost_grad(self, values: list[Variable]):
         if not hasattr(self, "_cost_grad"):
-            self._cost_grad = jax.grad(self.cost)
+            self._cost_grad = jax.jit(jax.grad(self.cost))
 
         return self._cost_grad(values)
 
     def cost_hess(self, values: list[Variable]):
         if not hasattr(self, "_cost_hess"):
-            self._cost_hess = jax.jacrev(jax.jacfwd(self.cost))
+            self._cost_hess = jax.jit(jax.jacrev(jax.jacfwd(self.cost)))
 
         return self._cost_hess(values)
 
@@ -248,12 +247,12 @@ class Factor:
 
     def constraints_jac(self, values: list[Variable]):
         if not hasattr(self, "_constraints_jac"):
-            self._constraints_jac = jax.jacfwd(self.constraints)
+            self._constraints_jac = jax.jit(jax.jacfwd(self.constraints))
 
         return self._constraints_jac(values)
 
     def constraints_hess(self, values: list[Variable]):
         if not hasattr(self, "_constraints_hess"):
-            self._constraints_hess = jax.jacrev(jax.jacfwd(self.constraints))
+            self._constraints_hess = jax.jit(jax.jacrev(jax.jacfwd(self.constraints)))
 
         return self._constraints_hess(values)
