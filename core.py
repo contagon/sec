@@ -31,7 +31,6 @@ def vec2var(vec: np.ndarray, template: Variables) -> Variable:
     # Only works for linear variables
     out = {}
     idx = 0
-    print(type(vec), type(template))
     for key, val in template.vals.items():
         dim = get_dim(val)
         out[key] = vec[idx : idx + dim]
@@ -52,7 +51,7 @@ class Variables:
             self.dim += get_dim(val)
             self.idx_end[key] = self.dim
 
-    def add_variable(self, key, value):
+    def add(self, key, value):
         self.vals[key] = value
         self.idx_start[key] = self.dim
         self.dim += get_dim(value)
@@ -102,10 +101,12 @@ class Graph:
             if (con_dim := factor.constraints_dim) is not None:
                 self.dim_con += con_dim
 
-    def add_factor(self, factor):
+    def add(self, factor):
         self.factors.append(factor)
-        self.dim_res += factor.residual_dim
-        self.dim_con += factor.constraints_dim
+        if (res_dim := factor.residual_dim) is not None:
+            self.dim_res += res_dim
+        if (con_dim := factor.constraints_dim) is not None:
+            self.dim_con += con_dim
 
     def objective(self, x: jax.Array) -> float:
         cost = 0
@@ -153,8 +154,9 @@ class Graph:
         row_idx = 0
         for factor in self.factors:
             num_rows = factor.constraints_dim
+            if num_rows is None:
+                continue
             for key in factor.keys:
-                num_cols = get_dim(self.template[key])
                 col, row = np.meshgrid(
                     np.arange(*self.template.idx(key)),
                     np.arange(row_idx, row_idx + num_rows),
@@ -194,7 +196,7 @@ class Graph:
             cu=cu,
         )
         sol, info = nlp.solve(x)
-        return sol, info
+        return vec2var(sol, self.template), info
 
 
 @dataclass

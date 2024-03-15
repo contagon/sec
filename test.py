@@ -4,11 +4,22 @@ import jax.experimental.sparse as sp
 from dataclasses import dataclass
 from overrides import overrides
 from double_integrator import DoubleIntegratorSim
+import matplotlib.pyplot as plt
 
 np.set_printoptions(precision=3, suppress=True, linewidth=200)
 
 
-# TODO: Figure out how to handle keys in the factors class
+def vals2state(vals: core.Variables) -> np.ndarray:
+    x = []
+    u = []
+    for key, val in vals.vals.items():
+        if "x" in key:
+            x.append(val)
+        elif "u" in key:
+            u.append(val)
+    return np.vstack(x), np.vstack(u)
+
+
 @dataclass
 class LinearSystem(core.Factor):
     A: np.ndarray
@@ -24,7 +35,7 @@ class LinearSystem(core.Factor):
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
         x, _, u = values
-        return x.T @ self.Q @ x + u.T @ self.R @ u
+        return x.T @ self.Q @ x / 2 + u.T @ self.R @ u / 2
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
@@ -51,22 +62,47 @@ class FixConstraint(core.Factor):
         return self.value.shape[0]
 
 
-sys = DoubleIntegratorSim(5, 0.1, np.ones(4))
+@dataclass
+class FinalCost(core.Factor):
+    Qf: np.ndarray
 
-graph = core.Graph(
-    [
-        FixConstraint(["x1"], sys.x0),
-        LinearSystem(["x1", "x2", "u1"], sys.A, sys.B, 4 * np.eye(4), 2 * np.eye(2)),
-    ]
-)
+    @property
+    @overrides
+    def has_cost(self) -> bool:
+        return True
 
-vals = core.Variables(
-    {
-        "x1": np.full(4, 2.0),
-        "x2": np.ones(4),
-        "u1": np.ones(2),
-    }
-)
+    @overrides
+    def cost(self, values: list[core.Variable]) -> float:
+        x = values[0]
+        return x.T @ self.Qf @ x / 2
 
-final = graph.solve(vals)
-print(final[1])
+
+x0 = np.array([1, 1, -1, 1])
+sys = DoubleIntegratorSim(5, 0.1, x0)
+graph = core.Graph()
+vals = core.Variables()
+
+graph.add(FixConstraint(["x0"], sys.x0))
+vals.add("x0", sys.x0)
+
+for i in range(sys.N - 1):
+    graph.add(
+        LinearSystem(
+            [f"x{i}", f"x{i+1}", f"u{i}"], sys.A, sys.B, np.eye(4), 0.1 * np.eye(2)
+        )
+    )
+    vals.add(f"x{i+1}", np.ones(4))
+    vals.add(f"u{i}", np.ones(2))
+
+graph.add(FinalCost([f"x{sys.N-1}"], 10 * np.eye(4)))
+
+final, info = graph.solve(vals)
+x, u = vals2state(final)
+
+t = np.linspace(0, sys.T, sys.N)
+plt.plot(t, x[:, 0], label="x")
+plt.plot(t, x[:, 1], label="y")
+plt.plot(t, x[:, 2], label="vx")
+plt.plot(t, x[:, 3], label="vy")
+plt.legend()
+plt.show()
