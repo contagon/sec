@@ -1,7 +1,7 @@
 import jaxlie
 import jax.numpy as np
 import jax
-from helpers import jacfwd
+from helpers import jacfwd, jacrev
 
 """
 Conclusion here:
@@ -28,22 +28,21 @@ def skew(omega: jax.Array) -> jax.Array:
     )
 
 
-# # Check both derivatives
-# print("Expected derivatives")
-# print(-p @ R.as_matrix() @ skew(p))
-# print()
-# print("Got derivatives")
-# out = jaxlie.manifold.grad(lambda R, p: p @ R.as_matrix() @ p, 0)(R, p)
-# print(out)
+# Check both derivatives
+print("Expected derivatives")
+print(-p @ R.as_matrix() @ skew(p))
+print("Got derivatives")
+out = jaxlie.manifold.grad(lambda R, p: p @ R.as_matrix() @ p, 0)(R, p)
+print(out)
 
-# # Check both derivatives
-# print("Expected derivatives")
-# print(-R.as_matrix() @ skew(p))
-# print(R.as_matrix())
-# print()
-# print("Got derivatives")
-# out = jacfwd(lambda x: x[0].apply(x[1]))([R, p])
-# print(out[0])
-# print(out[1])
-
-print(type(R) is jax.Array)
+# Check both derivatives
+print("Expected derivatives")
+print(-R.as_matrix() @ skew(p))
+print(R.as_matrix())
+print("Got derivatives")
+out = jacfwd(lambda x: x[0].apply(x[1]))([R, p])
+print(out[0])
+print(out[1])
+out = jacrev(lambda x: x[0].apply(x[1]))([R, p])
+print(out[0])
+print(out[1])
