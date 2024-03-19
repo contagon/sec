@@ -6,7 +6,8 @@ from collections import OrderedDict
 import jaxlie
 from collections.abc import Iterable
 import cyipopt
-from helpers import jitmethod
+from helpers import jitmethod, jitclass
+import jax_dataclasses as jdc
 
 GroupType = TypeVar("GroupType", bound=jaxlie.MatrixLieGroup)
 Variable = Union[jax.Array, GroupType]
@@ -98,6 +99,15 @@ class Variables:
         return np.concatenate(out)
 
 
+class GraphJit:
+    def __init__(self, graph):
+        self.objective = jax.jit(graph.objective)
+        self.constraints = jax.jit(graph.constraints)
+        self.gradient = jax.jit(graph.gradient)
+        self.jacobian = jax.jit(graph.jacobian)
+        self.jacobianstructure = jax.jit(graph.jacobianstructure)
+
+
 class Graph:
     def __init__(self, factors: list[Factor] = None):
         if factors is None:
@@ -113,7 +123,6 @@ class Graph:
     def add(self, factor):
         self.factors.append(factor)
 
-    @jitmethod
     def objective(self, x: jax.Array) -> float:
         values = vec2var(x, self.template)
         return sum([f.cost(values[f.keys]) for f in self.factors if f.has_cost])
@@ -124,7 +133,6 @@ class Graph:
         all = [f.constraints(values[f.keys]) for f in self.factors if f.has_con]
         return np.concatenate(all)
 
-    @jitmethod
     def gradient(self, x: jax.Array) -> np.ndarray:
         values = vec2var(x, self.template)
         out = np.zeros(values.dim)
@@ -186,7 +194,12 @@ class Graph:
 
     #     return np.concatenate(all)
 
-    def solve(self, x0: Variables):
+    def solve(self, x0: Variables, jit: bool = True):
+        if jit:
+            graph = GraphJit(self)
+        else:
+            graph = self
+
         self.template = x0
         x = x0.to_vec()
         lb = np.full(x.size, -np.inf)
@@ -200,36 +213,37 @@ class Graph:
         nlp = cyipopt.Problem(
             n=x0.dim,
             m=self.dim_con,
-            problem_obj=self,
+            problem_obj=graph,
             lb=lb,
             ub=ub,
             cl=cl,
             cu=cu,
         )
         nlp.add_option("max_iter", 200)
-        nlp.add_option("print_level", 0)
+        # nlp.add_option("print_level", 0)
         sol, info = nlp.solve(x)
         return vec2var(sol, self.template), info
 
 
-# @jitclass
+@jitclass
+@jdc.pytree_dataclass
 class Factor:
-    def __init__(self, keys: list[str]):
-        self.keys = keys
-        self.has_cost = type(self).cost != Factor.cost
-        self.has_con = type(self).constraints != Factor.constraints
-        self.has_res = type(self).residual != Factor.residual
+    keys: jdc.Static[list[str]]
 
-        # JIT all methods -> requires all methods to be jit-able
-        for f in filter(
-            lambda f: not f.startswith("_")
-            and callable(getattr(self, f))
-            and "jit" not in getattr(self, f).__repr__(),
-            dir(self),
-        ):
-            setattr(self, f, jax.jit(getattr(self, f)))
+    @property
+    def has_cost(self):
+        return type(self).cost != Factor.cost
+
+    @property
+    def has_con(self):
+        return type(self).constraints != Factor.constraints
+
+    @property
+    def has_res(self):
+        return type(self).residual != Factor.residual
 
     # ------------------------- Nonlinear Least-Squares ------------------------- #
+    # TODO: Use residuals instead of cost??? I think all costs will be nonlinear least squares
     def residual(self, values: list[Variable]) -> np.ndarray:
         pass
 
@@ -248,16 +262,10 @@ class Factor:
         pass
 
     def cost_grad(self, values: list[Variable]):
-        if not hasattr(self, "_cost_grad"):
-            self._cost_grad = jax.jit(jax.grad(self.cost))
-
-        return self._cost_grad(values)
+        return jax.grad(self.cost)(values)
 
     def cost_hess(self, values: list[Variable]):
-        if not hasattr(self, "_cost_hess"):
-            self._cost_hess = jax.jit(jax.jacrev(jax.jacfwd(self.cost)))
-
-        return self._cost_hess(values)
+        return jax.jacrev(jax.jacfwd(self.cost))(values)
 
     # ------------------------- Constraints ------------------------- #
     def constraints(self, values: list[Variable]) -> np.ndarray:
@@ -268,13 +276,7 @@ class Factor:
         return None
 
     def constraints_jac(self, values: list[Variable]):
-        if not hasattr(self, "_constraints_jac"):
-            self._constraints_jac = jax.jit(jax.jacfwd(self.constraints))
-
-        return self._constraints_jac(values)
+        return jax.jacfwd(self.constraints)(values)
 
     def constraints_hess(self, values: list[Variable]):
-        if not hasattr(self, "_constraints_hess"):
-            self._constraints_hess = jax.jit(jax.jacrev(jax.jacfwd(self.constraints)))
-
-        return self._constraints_hess(values)
+        return jax.jacrev(jax.jacfwd(self.constraints))(values)

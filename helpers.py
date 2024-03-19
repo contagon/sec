@@ -26,7 +26,7 @@ def jitclass(cls: T) -> T:
         and "jit" not in getattr(cls, f).__repr__(),
         dir(cls),
     ):
-        setattr(cls, f, jax.jit(getattr(cls, f), static_argnums=(0,)))
+        setattr(cls, f, jax.jit(getattr(cls, f)))
 
     return cls
 

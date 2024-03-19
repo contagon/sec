@@ -1,15 +1,18 @@
 import core
 from overrides import overrides
 import jax.numpy as np
+import jax_dataclasses as jdc
+from dataclasses import dataclass
+from helpers import jitclass
 
 
+@jitclass
+@jdc.pytree_dataclass
 class LinearSystem(core.Factor):
-    def __init__(self, keys, A, B, Q, R):
-        self.A = A
-        self.B = B
-        self.Q = Q
-        self.R = R
-        super().__init__(keys)
+    A: jdc.Static[np.ndarray]
+    B: jdc.Static[np.ndarray]
+    Q: jdc.Static[np.ndarray]
+    R: jdc.Static[np.ndarray]
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -27,10 +30,10 @@ class LinearSystem(core.Factor):
         return self.A.shape[0]
 
 
+@jitclass
+@jdc.pytree_dataclass
 class FixConstraint(core.Factor):
-    def __init__(self, keys: list[str], value):
-        self.value = value
-        super().__init__(keys)
+    value: jdc.Static[np.ndarray]
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
@@ -42,10 +45,10 @@ class FixConstraint(core.Factor):
         return self.value.shape[0]
 
 
+@jitclass
+@jdc.pytree_dataclass
 class FinalCost(core.Factor):
-    def __init__(self, keys: list[str], Qf):
-        self.Qf = Qf
-        super().__init__(keys)
+    Qf: jdc.Static[np.ndarray]
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -54,11 +57,11 @@ class FinalCost(core.Factor):
 
 
 # TODO: Test these
+@jitclass
+@jdc.pytree_dataclass
 class PriorFactor(core.Factor):
-    def __init__(self, keys: list[str], mu, sigma):
-        self.mu = mu
-        self.sigma = sigma
-        super().__init__(keys)
+    mu: jdc.Static[np.ndarray]
+    sigma: jdc.Static[np.ndarray]
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -66,21 +69,21 @@ class PriorFactor(core.Factor):
         return (x - self.mu).T @ np.linalg.inv(self.sigma) @ (x - self.mu) / 2
 
 
-class ProbLinearSystem(core.Factor):
-    def __init__(self, keys, A, B, u, sigma):
-        self.A = A
-        self.B = B
-        self.u = u
-        self.sigma = sigma
-        super().__init__(keys)
+# class ProbLinearSystem(core.Factor):
+#     def __init__(self, keys, A, B, u, sigma):
+#         self.A = A
+#         self.B = B
+#         self.u = u
+#         self.sigma = sigma
+#         super().__init__(keys)
 
-    @overrides
-    def cost(self, values: list[core.Variable]) -> float:
-        x_curr, x_next = values
-        x_next_est = self.A @ x_curr + self.B @ self.u
-        return (
-            (x_next - x_next_est).T
-            @ np.linalg.inv(self.sigma)
-            @ (x_next - x_next_est)
-            / 2
-        )
+#     @overrides
+#     def cost(self, values: list[core.Variable]) -> float:
+#         x_curr, x_next = values
+#         x_next_est = self.A @ x_curr + self.B @ self.u
+#         return (
+#             (x_next - x_next_est).T
+#             @ np.linalg.inv(self.sigma)
+#             @ (x_next - x_next_est)
+#             / 2
+#         )
