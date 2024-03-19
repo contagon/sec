@@ -38,9 +38,13 @@ def vec2var(vec: np.ndarray, template: Variables) -> Variable:
     return Variables(out)
 
 
+# TODO: Check if variable already exists
 class Variables:
-    def __init__(self, vals: OrderedDict = OrderedDict()):
-        self.vals = vals
+    def __init__(self, vals: OrderedDict = None):
+        if vals is None:
+            self.vals = OrderedDict()
+        else:
+            self.vals = vals
 
         self.dim = 0
         self.idx_start = {}
@@ -49,6 +53,13 @@ class Variables:
             self.idx_start[key] = self.dim
             self.dim += get_dim(val)
             self.idx_end[key] = self.dim
+
+    def copy(self):
+        new = Variables(self.vals.copy())
+        new.dim = self.dim
+        new.idx_start = self.idx_start.copy()
+        new.idx_end = self.idx_end.copy()
+        return new
 
     def add(self, key, value):
         self.vals[key] = value
@@ -88,24 +99,25 @@ class Variables:
 
 
 class Graph:
-    def __init__(self, factors: list[Factor] = []):
-        self.factors = factors
+    def __init__(self, factors: list[Factor] = None):
+        if factors is None:
+            self.factors = []
+        else:
+            self.factors = factors
         self.dim_res = sum([f.residual_dim for f in self.factors if f.has_res])
-        self.dim_con = sum([f.constraints_dim for f in self.factors if f.has_con])
+
+    @property
+    def dim_con(self):
+        return sum([f.constraints_dim for f in self.factors if f.has_con])
 
     def add(self, factor):
         self.factors.append(factor)
-        if (res_dim := factor.residual_dim) is not None:
-            self.dim_res += res_dim
-        if (con_dim := factor.constraints_dim) is not None:
-            self.dim_con += con_dim
 
     @jitmethod
     def objective(self, x: jax.Array) -> float:
         values = vec2var(x, self.template)
         return sum([f.cost(values[f.keys]) for f in self.factors if f.has_cost])
 
-    @jitmethod
     def constraints(self, x: jax.Array) -> np.ndarray:
         all = []
         values = vec2var(x, self.template)
@@ -126,7 +138,6 @@ class Graph:
 
         return out
 
-    @jitmethod
     def jacobian(self, x: jax.Array) -> np.ndarray:
         values = vec2var(x, self.template)
         all = []
@@ -137,9 +148,11 @@ class Graph:
                 for j in jac:
                     all.append(j.flatten())
 
+        if len(all) == 0:
+            return np.zeros(0)
+
         return np.concatenate(all)
 
-    @jitmethod
     def jacobianstructure(self):
         row_all, col_all = [], []
         row_idx = 0
@@ -155,6 +168,9 @@ class Graph:
                 col_all.append(col.flatten())
                 row_all.append(row.flatten())
             row_idx += num_rows
+
+        if len(row_all) == 0:
+            return np.zeros(0), np.zeros(0)
 
         return np.concatenate(row_all), np.concatenate(col_all)
 
@@ -175,8 +191,12 @@ class Graph:
         x = x0.to_vec()
         lb = np.full(x.size, -np.inf)
         ub = np.full(x.size, np.inf)
-        cl = np.zeros(self.dim_con)
-        cu = np.zeros(self.dim_con)
+        if self.dim_con == 0:
+            cl = None
+            cu = None
+        else:
+            cl = np.zeros(self.dim_con)
+            cu = np.zeros(self.dim_con)
         nlp = cyipopt.Problem(
             n=x0.dim,
             m=self.dim_con,
@@ -186,6 +206,8 @@ class Graph:
             cl=cl,
             cu=cu,
         )
+        nlp.add_option("max_iter", 200)
+        nlp.add_option("print_level", 0)
         sol, info = nlp.solve(x)
         return vec2var(sol, self.template), info
 
