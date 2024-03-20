@@ -47,6 +47,9 @@ class Variables:
         else:
             self.vals = vals
 
+        self.reindex()
+
+    def reindex(self):
         self.dim = 0
         self.idx_start = {}
         self.idx_end = {}
@@ -67,6 +70,10 @@ class Variables:
         self.idx_start[key] = self.dim
         self.dim += get_dim(value)
         self.idx_end[key] = self.dim
+
+    def rm(self, key):
+        del self.vals[key]
+        self.reindex()
 
     def __add__(self, other: np.ndarray):
         assert self.dim == other.size, "Dimension mismatch"
@@ -97,6 +104,18 @@ class Variables:
         for key, val in self.vals.items():
             out.append(val)
         return np.concatenate(out)
+
+    def _tree_flatten(self):
+        return jax.tree_util.tree_flatten(self.vals)
+
+    @classmethod
+    def _tree_unflatten(cls, aux_data, children):
+        return cls(jax.tree_util.tree_unflatten(aux_data, children))
+
+
+jax.tree_util.register_pytree_node(
+    Variables, Variables._tree_flatten, Variables._tree_unflatten
+)
 
 
 class GraphJit:
@@ -194,7 +213,7 @@ class Graph:
 
     #     return np.concatenate(all)
 
-    def solve(self, x0: Variables, jit: bool = True):
+    def solve(self, x0: Variables, jit: bool = True, verbose: bool = False):
         if jit:
             graph = GraphJit(self)
         else:
@@ -220,6 +239,7 @@ class Graph:
             cu=cu,
         )
         nlp.add_option("max_iter", 200)
+        # if not verbose:
         # nlp.add_option("print_level", 0)
         sol, info = nlp.solve(x)
         return vec2var(sol, self.template), info

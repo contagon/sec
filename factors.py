@@ -1,3 +1,4 @@
+from jax.numpy import ndarray
 import core
 from overrides import overrides
 import jax.numpy as np
@@ -9,10 +10,10 @@ from helpers import jitclass
 @jitclass
 @jdc.pytree_dataclass
 class LinearSystem(core.Factor):
-    A: jdc.Static[np.ndarray]
-    B: jdc.Static[np.ndarray]
-    Q: jdc.Static[np.ndarray]
-    R: jdc.Static[np.ndarray]
+    A: np.ndarray
+    B: np.ndarray
+    Q: np.ndarray
+    R: np.ndarray
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -33,7 +34,7 @@ class LinearSystem(core.Factor):
 @jitclass
 @jdc.pytree_dataclass
 class FixConstraint(core.Factor):
-    value: jdc.Static[np.ndarray]
+    value: np.ndarray
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
@@ -48,7 +49,7 @@ class FixConstraint(core.Factor):
 @jitclass
 @jdc.pytree_dataclass
 class FinalCost(core.Factor):
-    Qf: jdc.Static[np.ndarray]
+    Qf: np.ndarray
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -56,12 +57,13 @@ class FinalCost(core.Factor):
         return x.T @ self.Qf @ x / 2
 
 
+# ------------------------- Getting state estimation working ------------------------- #
 # TODO: Test these
 @jitclass
 @jdc.pytree_dataclass
 class PriorFactor(core.Factor):
-    mu: jdc.Static[np.ndarray]
-    sigma: jdc.Static[np.ndarray]
+    mu: np.ndarray
+    sigma: np.ndarray
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
@@ -69,21 +71,28 @@ class PriorFactor(core.Factor):
         return (x - self.mu).T @ np.linalg.inv(self.sigma) @ (x - self.mu) / 2
 
 
-# class ProbLinearSystem(core.Factor):
-#     def __init__(self, keys, A, B, u, sigma):
-#         self.A = A
-#         self.B = B
-#         self.u = u
-#         self.sigma = sigma
-#         super().__init__(keys)
+@jitclass
+@jdc.pytree_dataclass
+class LandmarkMeasure(core.Factor):
+    mm: np.ndarray
+    cov: np.ndarray
 
-#     @overrides
-#     def cost(self, values: list[core.Variable]) -> float:
-#         x_curr, x_next = values
-#         x_next_est = self.A @ x_curr + self.B @ self.u
-#         return (
-#             (x_next - x_next_est).T
-#             @ np.linalg.inv(self.sigma)
-#             @ (x_next - x_next_est)
-#             / 2
-#         )
+    @overrides
+    def cost(self, values: list[core.Variable]) -> float:
+        x, l = values
+        r = (l - x[:2]) - self.mm
+        return r.T @ np.linalg.inv(self.cov) @ r / 2
+
+
+@jitclass
+@jdc.pytree_dataclass
+class PastDynamics(core.Factor):
+    dyn: callable
+    u_mm: np.ndarray
+    cov: np.ndarray
+
+    @overrides
+    def cost(self, values: list[core.Variable]) -> float:
+        params, x, x_next = values
+        r = x_next - self.dyn(params, x, self.u_mm)
+        return r.T @ np.linalg.inv(self.cov) @ r / 2
