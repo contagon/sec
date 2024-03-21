@@ -9,6 +9,7 @@ from collections import namedtuple
 import cyipopt
 from helpers import jitmethod, jitclass
 import jax_dataclasses as jdc
+from functools import cached_property
 
 GroupType = TypeVar("GroupType", bound=jaxlie.MatrixLieGroup)
 Variable = Union[jax.Array, GroupType]
@@ -332,9 +333,32 @@ class Graph:
 class Factor:
     keys: list[str]
 
+    # ------------------------- Potential Overrides ------------------------- #
+    # Nonlinear least-squares
+    @property
+    def residual_dim(self):
+        return 0
+
+    def residual(self, values: list[Variable]) -> np.ndarray:
+        pass
+
+    # Generic cost function instead
+    def cost(self, values: list[Variable]) -> float:
+        r = self.residual(values)
+        return r @ self.Winv @ r / 2
+
+    # Constraints
+    @property
+    def constraints_dim(self) -> int:
+        return 0
+
+    def constraints(self, values: list[Variable]) -> np.ndarray:
+        return None
+
+    # ------------------------- Helpers ------------------------- #
     @property
     def has_cost(self):
-        return type(self).cost != Factor.cost
+        return self.has_res or (type(self).cost != Factor.cost)
 
     @property
     def has_con(self):
@@ -344,38 +368,20 @@ class Factor:
     def has_res(self):
         return type(self).residual != Factor.residual
 
-    # ------------------------- Nonlinear Least-Squares ------------------------- #
-    # TODO: Use residuals instead of cost??? I think all costs will be nonlinear least squares
-    def residual(self, values: list[Variable]) -> np.ndarray:
-        pass
+    @cached_property
+    def Winv(self):
+        return np.linalg.inv(self.W)
 
-    @property
-    def residual_dim(self):
-        return 0
+    # ------------------------- All autodiff jacobians & such ------------------------- #
+    def residual_jac(self, values: list[Variable]) -> np.ndarray:
+        return jax.jacfwd(self.residual)(values)
 
-    def residual_jac(self, values: list[Variable]) -> tuple:
-        if not hasattr(self, "_residual_jac"):
-            self._residual_jac = jax.jacfwd(self.residual)
-
-        return self._residual_jac(values)
-
-    # ------------------------- Costs ------------------------- #
-    def cost(self, values: list[Variable]) -> float:
-        pass
-
+    # Defaults to using residual cost (similar speed to using J^T r, easier to code)
     def cost_grad(self, values: list[Variable]):
         return jax.grad(self.cost)(values)
 
     def cost_hess(self, values: list[Variable]):
         return jax.jacrev(jax.jacfwd(self.cost))(values)
-
-    # ------------------------- Constraints ------------------------- #
-    def constraints(self, values: list[Variable]) -> np.ndarray:
-        return None
-
-    @property
-    def constraints_dim(self) -> int:
-        return 0
 
     def constraints_jac(self, values: list[Variable]):
         return jax.jacfwd(self.constraints)(values)

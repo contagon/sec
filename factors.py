@@ -63,25 +63,32 @@ class FinalCost(core.Factor):
 @jdc.pytree_dataclass
 class PriorFactor(core.Factor):
     mu: np.ndarray
-    sigma: np.ndarray
+    W: np.ndarray
 
     @overrides
-    def cost(self, values: list[core.Variable]) -> float:
+    def residual(self, values: list[core.Variable]) -> np.ndarray:
         x = values[0]
-        return (x - self.mu).T @ np.linalg.inv(self.sigma) @ (x - self.mu) / 2
+        return x - self.mu
+
+    @property
+    def residual_dim(self) -> int:
+        return self.mu.shape[0]
 
 
 @jitclass
 @jdc.pytree_dataclass
 class LandmarkMeasure(core.Factor):
     mm: np.ndarray
-    cov: np.ndarray
+    W: np.ndarray
 
     @overrides
-    def cost(self, values: list[core.Variable]) -> float:
+    def residual(self, values: list[core.Variable]) -> np.ndarray:
         x, l = values
-        r = (l - x[:2]) - self.mm
-        return r.T @ np.linalg.inv(self.cov) @ r / 2
+        return (l - x[:2]) - self.mm
+
+    @property
+    def residual_dim(self) -> int:
+        return self.mm.shape[0]
 
 
 @jitclass
@@ -89,10 +96,14 @@ class LandmarkMeasure(core.Factor):
 class PastDynamics(core.Factor):
     dyn: jdc.Static[callable]
     u_mm: np.ndarray
-    cov: np.ndarray
+    W: np.ndarray
 
     @overrides
-    def cost(self, values: list[core.Variable]) -> float:
+    def residual(self, values: list[core.Variable]) -> np.ndarray:
         params, x, x_next = values
-        r = x_next - self.dyn(params, x, self.u_mm)
-        return r.T @ np.linalg.inv(self.cov) @ r / 2
+        return x_next - self.dyn(params, x, self.u_mm)
+
+    # TODO: WRONG
+    @property
+    def residual_dim(self) -> int:
+        return self.u_mm.shape[0]

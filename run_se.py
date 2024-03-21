@@ -45,7 +45,8 @@ gt = core.Variables()
 key = sys.getkey()
 # Make u a little less boring
 us = (
-    np.tile(np.array([1.0, 0.0]), (sys.N, 1)) + jax.random.normal(key, (sys.N, 2)) * 0.1
+    np.tile(np.array([1.0, 0.05]), (sys.N, 1))
+    + jax.random.normal(key, (sys.N, 2)) * 0.1
 )
 x = sys.x0
 gt.add(sym.X(0), x)
@@ -71,7 +72,6 @@ x = sys.x0
 p = np.full(4, 1.2)
 init.add(sym.X(0), x)
 init.add(sym.P(0), p)
-# TODO: This prior factor isn't working anymore
 graph.add(factors.PriorFactor([sym.X(0)], sys.x0, np.eye(4) * 1e-2))
 graph.add(factors.PriorFactor([sym.P(0)], p, np.eye(4) * 1))
 
