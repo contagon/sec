@@ -87,7 +87,7 @@ class LandmarkMeasure(core.Factor):
 @jitclass
 @jdc.pytree_dataclass
 class PastDynamics(core.Factor):
-    dyn: callable
+    dyn: jdc.Static[callable]
     u_mm: np.ndarray
     cov: np.ndarray
 

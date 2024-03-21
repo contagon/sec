@@ -5,6 +5,7 @@ from typing import Union, TypeVar
 from collections import OrderedDict
 import jaxlie
 from collections.abc import Iterable
+from collections import namedtuple
 import cyipopt
 from helpers import jitmethod, jitclass
 import jax_dataclasses as jdc
@@ -96,6 +97,8 @@ class Variables:
         self.vals[key] = value
 
     def idx(self, key) -> tuple[int, int]:
+        if isinstance(key, Iterable) and not isinstance(key, str):
+            return [(self.idx_start[k], self.idx_end[k]) for k in key]
         return self.idx_start[key], self.idx_end[key]
 
     def to_vec(self):
@@ -105,17 +108,18 @@ class Variables:
             out.append(val)
         return np.concatenate(out)
 
-    def _tree_flatten(self):
-        return jax.tree_util.tree_flatten(self.vals)
 
-    @classmethod
-    def _tree_unflatten(cls, aux_data, children):
-        return cls(jax.tree_util.tree_unflatten(aux_data, children))
+#     def _tree_flatten(self):
+#         return jax.tree_util.tree_flatten(self.vals)
+
+#     @classmethod
+#     def _tree_unflatten(cls, aux_data, children):
+#         return cls(jax.tree_util.tree_unflatten(aux_data, children))
 
 
-jax.tree_util.register_pytree_node(
-    Variables, Variables._tree_flatten, Variables._tree_unflatten
-)
+# jax.tree_util.register_pytree_node(
+#     Variables, Variables._tree_flatten, Variables._tree_unflatten
+# )
 
 
 class GraphJit:
@@ -129,51 +133,101 @@ class GraphJit:
 
 class Graph:
     def __init__(self, factors: list[Factor] = None):
-        if factors is None:
-            self.factors = []
+        self.factors = {}
+        if factors is not None:
+            for f in factors:
+                self.add(f)
+
+    def add(self, factor):
+        key = (type(factor), factor.constraints_dim)
+        if key in self.factors:
+            self.factors[key].append(factor)
         else:
-            self.factors = factors
-        self.dim_res = sum([f.residual_dim for f in self.factors if f.has_res])
+            self.factors[key] = [factor]
 
     @property
     def dim_con(self):
-        return sum([f.constraints_dim for f in self.factors if f.has_con])
+        return sum(
+            [
+                f[0].constraints_dim * len(f)
+                for f in self.factors.values()
+                if f[0].has_con
+            ]
+        )
 
-    def add(self, factor):
-        self.factors.append(factor)
-
+    @jitmethod
     def objective(self, x: jax.Array) -> float:
         values = vec2var(x, self.template)
-        return sum([f.cost(values[f.keys]) for f in self.factors if f.has_cost])
+        cost = 0
+        for key, factor in self.factors.items():
+            cost += sum([f.cost(values[f.keys]) for f in factor if f.has_cost])
+
+        return cost
 
     def constraints(self, x: jax.Array) -> np.ndarray:
         all = []
         values = vec2var(x, self.template)
-        all = [f.constraints(values[f.keys]) for f in self.factors if f.has_con]
+
+        for key, factor in self.factors.items():
+            all += [f.constraints(values[f.keys]) for f in factor if f.has_con]
+
         return np.concatenate(all)
 
+    @jitmethod
     def gradient(self, x: jax.Array) -> np.ndarray:
+        Step = namedtuple("Step", ["factors", "values", "idx"])
         values = vec2var(x, self.template)
         out = np.zeros(values.dim)
 
-        for factor in self.factors:
+        def loop(out, data):
+            factor = data.factors
+            vals = data.values
+            idx = data.idx
             if factor.has_cost:
-                grad = factor.cost_grad(values[factor.keys])
-                for key, g in zip(factor.keys, grad):
-                    start, end = self.template.idx(key)
-                    out = out.at[start:end].add(g)
+                grad = factor.cost_grad(vals)
+                for g, i in zip(grad, idx):
+                    out = jax.lax.dynamic_update_slice(out, g, (i,))
+            return out, None
+
+        def pytrees_stack(pytrees, axis=0):
+            results = jax.tree_map(
+                lambda *values: np.stack(values, axis=axis), *pytrees
+            )
+            return results
+
+        for factor_type, factors in self.factors.items():
+            stacked_f = pytrees_stack(factors)
+
+            stacked_v = jax.tree_map(
+                lambda f: values[f.keys],
+                factors,
+                is_leaf=lambda n: isinstance(n, Factor),
+            )
+            stacked_v = pytrees_stack(stacked_v)
+
+            stacked_i = jax.tree_map(
+                lambda f: values.idx(f.keys)[0],
+                factors,
+                is_leaf=lambda n: isinstance(n, Factor),
+            )
+            stacked_i = pytrees_stack(stacked_i)
+
+            s = Step(stacked_f, stacked_v, stacked_i)
+            out = out + jax.lax.scan(loop, out, s)[0]
 
         return out
 
+    @jitmethod
     def jacobian(self, x: jax.Array) -> np.ndarray:
         values = vec2var(x, self.template)
         all = []
 
-        for factor in self.factors:
-            if factor.has_con:
-                jac = factor.constraints_jac(values[factor.keys])
-                for j in jac:
-                    all.append(j.flatten())
+        for factors in self.factors.values():
+            for f in factors:
+                if f.has_con:
+                    jac = f.constraints_jac(values[f.keys])
+                    for j in jac:
+                        all.append(j.flatten())
 
         if len(all) == 0:
             return np.zeros(0)
@@ -183,18 +237,19 @@ class Graph:
     def jacobianstructure(self):
         row_all, col_all = [], []
         row_idx = 0
-        for factor in self.factors:
-            if not factor.has_con:
-                continue
-            num_rows = factor.constraints_dim
-            for key in factor.keys:
-                col, row = np.meshgrid(
-                    np.arange(*self.template.idx(key)),
-                    np.arange(row_idx, row_idx + num_rows),
-                )
-                col_all.append(col.flatten())
-                row_all.append(row.flatten())
-            row_idx += num_rows
+        for factors in self.factors.values():
+            for f in factors:
+                if not f.has_con:
+                    continue
+                num_rows = f.constraints_dim
+                for key in f.keys:
+                    col, row = np.meshgrid(
+                        np.arange(*self.template.idx(key)),
+                        np.arange(row_idx, row_idx + num_rows),
+                    )
+                    col_all.append(col.flatten())
+                    row_all.append(row.flatten())
+                row_idx += num_rows
 
         if len(row_all) == 0:
             return np.zeros(0), np.zeros(0)
@@ -248,7 +303,7 @@ class Graph:
 @jitclass
 @jdc.pytree_dataclass
 class Factor:
-    keys: jdc.Static[list[str]]
+    keys: list[str]
 
     @property
     def has_cost(self):
@@ -269,7 +324,7 @@ class Factor:
 
     @property
     def residual_dim(self):
-        return None
+        return 0
 
     def residual_jac(self, values: list[Variable]) -> tuple:
         if not hasattr(self, "_residual_jac"):
@@ -293,7 +348,7 @@ class Factor:
 
     @property
     def constraints_dim(self) -> int:
-        return None
+        return 0
 
     def constraints_jac(self, values: list[Variable]):
         return jax.jacfwd(self.constraints)(values)

@@ -103,25 +103,25 @@ for i in range(sys.N):
 graph.template = init
 
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.objective(init.to_vec())
 end = timer()
-print(f"JIT time: {end - start}", out.shape)
+print(f"JIT time: {end - start}", out)
 
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.objective(init.to_vec())
 end = timer()
-print(f"JIT time: {end - start}", out.shape)
+print(f"JIT time: {end - start}", out)
 
 # Run time with new factor
 graph.add(factors.PriorFactor([sym.P(0)], p, np.eye(4) * 1))
 init.add("r", np.zeros(4))
 print()
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.objective(init.to_vec())
 end = timer()
-print(f"JIT time: {end - start}", len(out))
+print(f"JIT time: {end - start}", out)
 
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.objective(init.to_vec())
 end = timer()
-print(f"JIT time: {end - start}", len(out))
+print(f"JIT time: {end - start}", out)

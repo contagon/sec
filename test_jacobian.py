@@ -40,7 +40,7 @@ def vals2state(vals: core.Variables) -> np.ndarray:
 
 
 # ------------------------- Run the simulation ------------------------- #
-sys = DoubleIntegratorSim(1, 0.1)
+sys = DoubleIntegratorSim(5, 0.1)
 gt = core.Variables()
 
 key = sys.getkey()
@@ -69,46 +69,32 @@ init = core.Variables()
 # priors for inits
 x = sys.x0
 p = np.full(4, 1.2)
-init.add(sym.X(0), x)
-init.add(sym.P(0), p)
-graph.add(factors.PriorFactor([sym.X(0)], sys.x0, np.eye(4) * 1e-2))
-graph.add(factors.PriorFactor([sym.P(0)], p, np.eye(4) * 1))
+A, B = sys._makeAB(p, sys.dt)
 
-# landmark estimates
-for i, l in enumerate(sys.landmarks):
-    key = sys.getkey()
-    est = l + jax.random.normal(key, (2,), dtype=np.float32)
-    init.add(sym.L(i), est)
+graph.add(factors.FixConstraint([sym.X(0)], sys.x0))
+init.add(sym.X(0), sys.x0)
 
-# trajectory estimates
 for i in range(sys.N):
     graph.add(
-        factors.PastDynamics(
-            [sym.P(0), sym.X(i), sym.X(i + 1)],
-            sys.dynamics,
-            us[i],
-            np.eye(4) * sys.std_Q,
+        factors.LinearSystem(
+            [sym.X(i), sym.X(i + 1), sym.U(i)], A, B, np.eye(4), 0.1 * np.eye(2)
         )
     )
-    x = sys.dynamics(p, x, us[i])
-    init.add(sym.X(i + 1), x)
-    for idx, z in enumerate(meas[i]):
-        graph.add(
-            factors.LandmarkMeasure(
-                [sym.X(i + 1), sym.L(idx)], z, np.eye(2) * sys.std_R
-            )
-        )
+    init.add(sym.X(i + 1), np.ones(4, dtype=np.float32))
+    init.add(sym.U(i), np.ones(2, dtype=np.float32))
+
+graph.add(factors.FinalCost([f"x{sys.N}"], 10 * np.eye(4)))
 
 
 graph.template = init
 
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.jacobian(init.to_vec())
 end = timer()
 print(f"JIT time: {end - start}", out.shape)
 
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.jacobian(init.to_vec())
 end = timer()
 print(f"JIT time: {end - start}", out.shape)
 
@@ -117,11 +103,11 @@ graph.add(factors.PriorFactor([sym.P(0)], p, np.eye(4) * 1))
 init.add("r", np.zeros(4))
 print()
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.jacobian(init.to_vec())
 end = timer()
 print(f"JIT time: {end - start}", len(out))
 
 start = timer()
-out = graph.gradient(init.to_vec())
+out = graph.jacobian(init.to_vec())
 end = timer()
 print(f"JIT time: {end - start}", len(out))
