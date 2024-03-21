@@ -41,6 +41,7 @@ def vec2var(vec: np.ndarray, template: Variables) -> Variable:
 
 
 # TODO: Check if variable already exists
+# TODO: Make variable insertion always in order so indexing is consistent.
 class Variables:
     def __init__(self, vals: OrderedDict = None):
         if vals is None:
@@ -51,6 +52,10 @@ class Variables:
         self.reindex()
 
     def reindex(self):
+        # Sort the keys first
+        self.vals = OrderedDict(sorted(self.vals.items(), key=lambda x: x[0]))
+
+        # Then add all dimensions
         self.dim = 0
         self.idx_start = {}
         self.idx_end = {}
@@ -96,10 +101,18 @@ class Variables:
     def __setitem__(self, key, value):
         self.vals[key] = value
 
+    def __len__(self):
+        return len(self.vals)
+
     def idx(self, key) -> tuple[int, int]:
         if isinstance(key, Iterable) and not isinstance(key, str):
             return [(self.idx_start[k], self.idx_end[k]) for k in key]
         return self.idx_start[key], self.idx_end[key]
+
+    def start_idx(self, key) -> tuple[int, int]:
+        if isinstance(key, Iterable) and not isinstance(key, str):
+            return [self.idx_start[k] for k in key]
+        return self.idx_start[key]
 
     def to_vec(self):
         # Only works in the linear case!
@@ -125,8 +138,9 @@ class Variables:
 class GraphJit:
     def __init__(self, graph):
         self.objective = jax.jit(graph.objective)
-        self.constraints = jax.jit(graph.constraints)
         self.gradient = jax.jit(graph.gradient)
+
+        self.constraints = jax.jit(graph.constraints)
         self.jacobian = jax.jit(graph.jacobian)
         self.jacobianstructure = jax.jit(graph.jacobianstructure)
 
@@ -157,13 +171,18 @@ class Graph:
 
     @jitmethod
     def objective(self, x: jax.Array) -> float:
-        values = vec2var(x, self.template)
-        cost = 0
-        for key, factor in self.factors.items():
-            cost += sum([f.cost(values[f.keys]) for f in factor if f.has_cost])
+        def loop(out, data):
+            factor = data.factors
+            vals = data.values
+            idx = data.idx
+            if factor.has_cost:
+                out += factor.cost(vals)
 
-        return cost
+            return out, None
 
+        return self._loop_factors(x, loop, 0)
+
+    @jitmethod
     def constraints(self, x: jax.Array) -> np.ndarray:
         all = []
         values = vec2var(x, self.template)
@@ -175,7 +194,6 @@ class Graph:
 
     @jitmethod
     def gradient(self, x: jax.Array) -> np.ndarray:
-        Step = namedtuple("Step", ["factors", "values", "idx"])
         values = vec2var(x, self.template)
         out = np.zeros(values.dim)
 
@@ -186,8 +204,15 @@ class Graph:
             if factor.has_cost:
                 grad = factor.cost_grad(vals)
                 for g, i in zip(grad, idx):
-                    out = jax.lax.dynamic_update_slice(out, g, (i,))
+                    insert = g + jax.lax.dynamic_slice(out, (i,), (g.size,))
+                    out = jax.lax.dynamic_update_slice(out, insert, (i,))
             return out, None
+
+        return self._loop_factors(x, loop, out)
+
+    def _loop_factors(self, x: jax.Array, func: callable, init):
+        Step = namedtuple("Step", ["factors", "values", "idx"])
+        values = vec2var(x, self.template)
 
         def pytrees_stack(pytrees, axis=0):
             results = jax.tree_map(
@@ -206,16 +231,16 @@ class Graph:
             stacked_v = pytrees_stack(stacked_v)
 
             stacked_i = jax.tree_map(
-                lambda f: values.idx(f.keys)[0],
+                lambda f: values.start_idx(f.keys),
                 factors,
                 is_leaf=lambda n: isinstance(n, Factor),
             )
             stacked_i = pytrees_stack(stacked_i)
 
             s = Step(stacked_f, stacked_v, stacked_i)
-            out = out + jax.lax.scan(loop, out, s)[0]
+            init = jax.lax.scan(func, init, s)[0]
 
-        return out
+        return init
 
     @jitmethod
     def jacobian(self, x: jax.Array) -> np.ndarray:
@@ -234,6 +259,8 @@ class Graph:
 
         return np.concatenate(all)
 
+    @jitmethod
+    # TODO: Can speed up at all?
     def jacobianstructure(self):
         row_all, col_all = [], []
         row_idx = 0

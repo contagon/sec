@@ -1,3 +1,5 @@
+import builtins
+
 NUM_EACH = 1000
 FIRST_CHAR = 65
 
@@ -29,8 +31,7 @@ Y = lambda k: 24 * NUM_EACH + k
 Z = lambda k: 25 * NUM_EACH + k
 
 
-def sym2str(s: int):
+def str(s: int):
     i = s // NUM_EACH
-    print(i)
     k = s % NUM_EACH
-    return chr(FIRST_CHAR + i) + str(k)
+    return chr(FIRST_CHAR + i) + builtins.str(k)
