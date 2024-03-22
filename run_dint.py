@@ -44,8 +44,9 @@ def vals2state(vals: core.Variables) -> np.ndarray:
 
 
 # Set up the simulation
-xg = np.array([3.0, 0, 0, 0])
-sys = DoubleIntegratorSim(5, 0.1)
+xg = np.array([10.0, 0, 0, 0])
+sys = DoubleIntegratorSim(5, 0.1, num_landmarks=10, dist=0.5)
+# sys.landmarks = np.array([[5.0, -0.1]])
 graph = core.Graph()
 vals = core.Variables()
 
@@ -74,6 +75,13 @@ for i in range(sys.N):
     vals.add(sym.X(i + 1), x)
     vals.add(sym.U(i), u)
 
+    for idx, l in enumerate(sys.landmarks):
+        graph.add(LandmarkAvoid([sym.X(i), sym.L(idx)], sys.dist))
+
+for i, l in enumerate(sys.landmarks):
+    vals.add(sym.L(i), l)
+    graph.add(FixConstraint([sym.L(i)], l))
+
 graph.add(FinalCost([sym.X(sys.N)], xg, 10 * np.eye(4)))
 
 sol, _ = graph.solve(vals)
@@ -82,5 +90,9 @@ xsim, usim, lsim = vals2state(sol)
 t = np.linspace(0, sys.T, sys.N + 1)
 fig, ax = plt.subplots(1, 1)
 ax = [ax]
-ax[0].plot(xsim[:, 0], xsim[:, 1], label="sim")
+ax[0].plot(xsim[:, 0], xsim[:, 1], label="sim", marker="o")
+ax[0].plot(sys.landmarks[:, 0], sys.landmarks[:, 1], "ro", label="landmarks")
+for l in sys.landmarks:
+    ax[0].add_artist(plt.Circle(l, sys.dist, fill=False, color="r"))
+ax[0].set_aspect("equal")
 plt.show()

@@ -1,6 +1,6 @@
 import sec.core as core
 import factors
-from double_integrator import DoubleIntegratorSim
+from sec.dint._system import DoubleIntegratorSim
 import jax.numpy as np
 import matplotlib.pyplot as plt
 from tqdm import trange

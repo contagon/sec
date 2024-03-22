@@ -5,7 +5,14 @@ from sec.core import jitmethod
 
 class DoubleIntegratorSim:
     def __init__(
-        self, T, dt, std_Q=0.01, std_R=0.05, num_landmarks=10, params=np.ones(4)
+        self,
+        T,
+        dt,
+        std_Q=0.01,
+        std_R=0.05,
+        num_landmarks=10,
+        params=np.ones(4),
+        dist=0.5,
     ):
         self.T = T
         self.dt = dt
@@ -13,6 +20,7 @@ class DoubleIntegratorSim:
         self.std_Q = std_Q
         self.std_R = std_R
         self.params = params
+        self.dist = dist
         self.key = jax.random.PRNGKey(0)
 
         self.x0 = np.zeros(4)

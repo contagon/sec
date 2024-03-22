@@ -56,6 +56,21 @@ class Graph:
         return np.concatenate(all)
 
     @jitmethod
+    def constraints_bounds(self):
+        all_lb, all_ub = [], []
+        for key, factor in self.factors.items():
+            for f in factor:
+                if f.has_con:
+                    lb, ub = f.constraints_bounds
+                    all_lb.append(lb)
+                    all_ub.append(ub)
+
+        if len(all_lb) == 0:
+            return None, None
+
+        return np.concatenate(all_lb), np.concatenate(all_ub)
+
+    @jitmethod
     def gradient(self, x: jax.Array) -> np.ndarray:
         values = vec2var(x, self.template)
         out = np.zeros(values.dim)
@@ -106,6 +121,7 @@ class Graph:
         return init
 
     @jitmethod
+    # TODO: THIS IS SLOW TO JIT!
     def jacobian(self, x: jax.Array) -> np.ndarray:
         values = vec2var(x, self.template)
         all = []
@@ -164,12 +180,7 @@ class Graph:
         x = x0.to_vec()
         lb = np.full(x.size, -np.inf)
         ub = np.full(x.size, np.inf)
-        if self.dim_con == 0:
-            cl = None
-            cu = None
-        else:
-            cl = np.zeros(self.dim_con)
-            cu = np.zeros(self.dim_con)
+        cl, cu = self.constraints_bounds()
         nlp = cyipopt.Problem(
             n=x0.dim,
             m=self.dim_con,

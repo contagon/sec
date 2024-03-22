@@ -63,16 +63,18 @@ class FinalCost(core.Factor):
 @jitclass
 @jdc.pytree_dataclass
 class LandmarkAvoid(core.Factor):
+    dist: float = 0.5
+
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
         x, l = values
         d = x[:2] - l
-        return d.T @ d
+        return np.array([d.T @ d])
 
     @property
     @overrides
     def constraints_bounds(self) -> tuple[np.ndarray, np.ndarray]:
-        return np.full(1, 0.1), np.inf * np.ones(1)
+        return np.full(1, self.dist**2), np.inf * np.ones(1)
 
 
 # ------------------------- State Estimation Factors ------------------------- #
