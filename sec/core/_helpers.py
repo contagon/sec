@@ -1,9 +1,7 @@
-from typing import Any, Callable, Sequence, Union, TypeVar, Type
+from typing import Any, Callable, Sequence, Union, TypeVar
 from jaxlie.manifold import rplus, zero_tangents
 import jax
 from typing_extensions import ParamSpec
-from functools import partial
-import chex
 
 AxisName = Any
 P = ParamSpec("P")

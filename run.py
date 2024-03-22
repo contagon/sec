@@ -1,4 +1,4 @@
-import core
+import sec.core as core
 import factors
 from double_integrator import DoubleIntegratorSim
 import jax.numpy as np

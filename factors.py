@@ -1,10 +1,10 @@
 from jax.numpy import ndarray
-import core
+import sec.core as core
 from overrides import overrides
 import jax.numpy as np
 import jax_dataclasses as jdc
 from dataclasses import dataclass
-from helpers import jitclass
+from sec.core import jitclass
 
 
 @jitclass

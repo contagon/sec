@@ -3,7 +3,7 @@ from jax.scipy.linalg import expm
 import jax.numpy as np
 import jax
 import matplotlib.pyplot as plt
-from helpers import jitmethod
+from sec.core import jitmethod
 
 
 class DoubleIntegratorSim:

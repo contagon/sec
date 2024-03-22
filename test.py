@@ -1,75 +1,29 @@
-import core
-import jax.numpy as np
-import jax.experimental.sparse as sp
-from dataclasses import dataclass
-from overrides import overrides
-from double_integrator import DoubleIntegratorSim
-import matplotlib.pyplot as plt
-from helpers import jitclass
-import jax
-from functools import partial
-from factors import *
+from timeit import timeit
 
+SETUP = """
+import core
+from double_integrator import DoubleIntegratorSim
+import symbols as sym
+import jax
+import jax.numpy as np
+from factors import PastDynamics
 np.set_printoptions(precision=3, suppress=True, linewidth=200)
 jax.config.update("jax_platforms", "cpu")
 
-
-def vals2state(vals: core.Variables) -> np.ndarray:
-    x = []
-    u = []
-    for key, val in vals.vals.items():
-        if "x" in key:
-            x.append(val)
-        elif "u" in key:
-            u.append(val)
-    return np.vstack(x), np.vstack(u)
-
-
 x0 = np.array([1.0, 1, -1, 1])
+p0 = np.ones(4)
 sys = DoubleIntegratorSim(5, 0.1, x0)
 graph = core.Graph()
 vals = core.Variables()
 
-# f = FixConstraint(["x0"], sys.x0)
-# print(f.constraints([sys.x0]))
-# print(f.constraints_jac([sys.x0]))
+f = PastDynamics([sym.P(0), sym.X(0), sym.X(1)], sys.dynamics, np.ones(2), np.eye(4))
+"""
 
-# f = LinearSystem(["x0", "x1", "u0"], sys.A, sys.B, np.eye(4), 0.1 * np.eye(2))
-# print(f.constraints([sys.x0, sys.x0, np.ones(2)]))
-# out = f.constraints_jac([sys.x0, sys.x0, np.ones(2)])
-# print(out)
+# print(f.residual([p0, x0, x0]))
+# print(j := f.residual_jac([p0, x0, x0]))
+# print()
 
+# print(np.hstack(j).shape)
 
-graph.add(FixConstraint(["x0"], sys.x0))
-vals.add("x0", sys.x0)
-
-for i in range(sys.N - 1):
-    graph.add(
-        LinearSystem(
-            [f"x{i}", f"x{i+1}", f"u{i}"], sys.A, sys.B, np.eye(4), 0.1 * np.eye(2)
-        )
-    )
-    vals.add(f"x{i+1}", np.ones(4, dtype=np.float32))
-    vals.add(f"u{i}", np.ones(2, dtype=np.float32))
-
-graph.add(FinalCost([f"x{sys.N-1}"], 10 * np.eye(4)))
-
-graph.template = vals
-
-final, info = graph.solve(vals)
-final, info = graph.solve(vals)
-x, u = vals2state(final)
-
-t = np.linspace(0, sys.T, sys.N)
-plt.plot(t, x[:, 0], label="x")
-plt.plot(t, x[:, 1], label="y")
-plt.plot(t, x[:, 2], label="vx")
-plt.plot(t, x[:, 3], label="vy")
-plt.legend()
-plt.show()
-
-f = FinalCost(["x0"], 0.1 * np.eye(4))
-f.cost(vals[f.keys])
-print()
-print(f.cost_grad(vals[f.keys]))
-# print(f.constraints_jac([np.ones(4)]))
+print(timeit("f.cost_grad([p0, x0, x0])", setup=SETUP))
+print(timeit("f.cost_grad1([p0, x0, x0])", setup=SETUP))
