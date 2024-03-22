@@ -1,8 +1,5 @@
-import cyipopt
-from jax.scipy.linalg import expm
 import jax.numpy as np
 import jax
-import matplotlib.pyplot as plt
 from sec.core import jitmethod
 
 
@@ -19,7 +16,6 @@ class DoubleIntegratorSim:
         self.key = jax.random.PRNGKey(0)
 
         self.x0 = np.zeros(4)
-        self.x = self.x0.copy()
         self.xg = np.array([10, 0, 0, 0])
 
         self.key, subkey = jax.random.split(self.key)
@@ -29,9 +25,6 @@ class DoubleIntegratorSim:
             minval=np.array([2, -2]),
             maxval=np.array([8, 2]),
         )
-
-    def reset(self):
-        self.x = self.x0.copy()
 
     def getkey(self):
         self.key, subkey = jax.random.split(self.key)

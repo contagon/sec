@@ -29,8 +29,8 @@ def add(val: Variable, delta: jax.Array) -> Variable:
 def vec2var(vec: np.ndarray, template: Variables) -> Variable:
     # Only works for linear variables
     out = {}
-    idx = 0
     for key, val in template.vals.items():
+        idx = template.start_idx(key)
         dim = get_dim(val)
         out[key] = vec[idx : idx + dim]
         idx += dim
@@ -70,9 +70,8 @@ class Variables:
 
     def add(self, key, value):
         self.vals[key] = value
-        self.idx_start[key] = self.dim
-        self.dim += get_dim(value)
-        self.idx_end[key] = self.dim
+        # TODO: This is really inefficent, but things go poorly if I don't do
+        self.reindex()
 
     def rm(self, key):
         del self.vals[key]

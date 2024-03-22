@@ -31,8 +31,8 @@ class Factor:
 
     # Constraints
     @property
-    def constraints_dim(self) -> int:
-        return 0
+    def constraints_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        return np.zeros(0), np.zeros(0)
 
     def constraints(self, values: list[Variable]) -> np.ndarray:
         return None
@@ -57,6 +57,10 @@ class Factor:
     # ------------------------- All autodiff jacobians & such ------------------------- #
     def residual_jac(self, values: list[Variable]) -> np.ndarray:
         return jax.jacfwd(self.residual)(values)
+
+    @property
+    def constraints_dim(self) -> int:
+        return self.constraints_bounds[0].size
 
     # Defaults to using residual cost (similar speed to using J^T r, easier to code)
     def cost_grad(self, values: list[Variable]):

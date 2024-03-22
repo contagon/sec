@@ -1,6 +1,10 @@
 import sec.core as core
-import factors
-from double_integrator import DoubleIntegratorSim
+from sec.dint import (
+    DoubleIntegratorSim,
+    PriorFactor,
+    LandmarkMeasure,
+    PastDynamics,
+)
 import jax.numpy as np
 import matplotlib.pyplot as plt
 from tqdm import trange
@@ -72,8 +76,8 @@ x = sys.x0
 p = np.full(4, 1.2)
 init.add(sym.X(0), x)
 init.add(sym.P(0), p)
-graph.add(factors.PriorFactor([sym.X(0)], sys.x0, np.eye(4) * 1e-2))
-graph.add(factors.PriorFactor([sym.P(0)], p, np.eye(4) * 1))
+graph.add(PriorFactor([sym.X(0)], sys.x0, np.eye(4) * 1e-2))
+graph.add(PriorFactor([sym.P(0)], p, np.eye(4) * 1))
 
 # landmark estimates
 for i, l in enumerate(sys.landmarks):
@@ -84,7 +88,7 @@ for i, l in enumerate(sys.landmarks):
 # trajectory estimates
 for i in range(sys.N):
     graph.add(
-        factors.PastDynamics(
+        PastDynamics(
             [sym.P(0), sym.X(i), sym.X(i + 1)],
             sys.dynamics,
             us[i],
@@ -95,9 +99,7 @@ for i in range(sys.N):
     init.add(sym.X(i + 1), x)
     for idx, z in enumerate(meas[i]):
         graph.add(
-            factors.LandmarkMeasure(
-                [sym.X(i + 1), sym.L(idx)], z, np.eye(2) * sys.std_R**2
-            )
+            LandmarkMeasure([sym.X(i + 1), sym.L(idx)], z, np.eye(2) * sys.std_R**2)
         )
 
 # Make sure they're indexed properly
