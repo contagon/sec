@@ -11,6 +11,8 @@ from ._helpers import jitmethod
 class Graph:
     def __init__(self, factors: list[Factor] = None):
         self.factors = {}
+        self.factor_idx = {}
+        self.factor_count = 0
         if factors is not None:
             for f in factors:
                 self.add(f)
@@ -21,6 +23,15 @@ class Graph:
             self.factors[key].append(factor)
         else:
             self.factors[key] = [factor]
+
+        idx = len(self.factors[key]) - 1
+        self.factor_idx[self.factor_count] = (key, idx)
+        self.factor_count += 1
+        return self.factor_count - 1
+
+    def remove(self, idx):
+        key, idx = self.factor_idx.pop(idx)
+        self.factors[key].pop(idx)
 
     @property
     def dim_con(self):
@@ -43,17 +54,21 @@ class Graph:
 
             return out, None
 
-        return self._loop_factors(x, loop, 0)
+        return self._loop_factors(x, loop, 0)[0]
 
     @jitmethod
     def constraints(self, x: jax.Array) -> np.ndarray:
-        all = []
-        values = vec2var(x, self.template)
+        def loop(out, data):
+            factor = data.factors
+            vals = data.values
+            if factor.has_con:
+                c = factor.constraints(vals)
+                return out, c
 
-        for key, factor in self.factors.items():
-            all += [f.constraints(values[f.keys]) for f in factor if f.has_con]
+            return out, None
 
-        return np.concatenate(all)
+        out = self._loop_factors(x, loop, 0)[1]
+        return np.concatenate([j.flatten() for j in out if j is not None])
 
     @jitmethod
     def constraints_bounds(self):
@@ -86,7 +101,21 @@ class Graph:
                     out = jax.lax.dynamic_update_slice(out, insert, (i,))
             return out, None
 
-        return self._loop_factors(x, loop, out)
+        return self._loop_factors(x, loop, out)[0]
+
+    @jitmethod
+    def jacobian(self, x: jax.Array) -> np.ndarray:
+        def loop(out, data):
+            factor = data.factors
+            vals = data.values
+            if factor.has_con:
+                jac = factor.constraints_jac(vals)
+                return out, np.concatenate([j.flatten() for j in jac])
+
+            return out, None
+
+        out = self._loop_factors(x, loop, 0)[1]
+        return np.concatenate([j.flatten() for j in out if j is not None])
 
     def _loop_factors(self, x: jax.Array, func: callable, init):
         Step = namedtuple("Step", ["factors", "values", "idx"])
@@ -98,6 +127,7 @@ class Graph:
             )
             return results
 
+        arrays = []
         for factor_type, factors in self.factors.items():
             stacked_f = pytrees_stack(factors)
 
@@ -116,27 +146,10 @@ class Graph:
             stacked_i = pytrees_stack(stacked_i)
 
             s = Step(stacked_f, stacked_v, stacked_i)
-            init = jax.lax.scan(func, init, s)[0]
+            init, arr = jax.lax.scan(func, init, s)
+            arrays.append(arr)
 
-        return init
-
-    @jitmethod
-    # TODO: THIS IS SLOW TO JIT!
-    def jacobian(self, x: jax.Array) -> np.ndarray:
-        values = vec2var(x, self.template)
-        all = []
-
-        for factors in self.factors.values():
-            for f in factors:
-                if f.has_con:
-                    jac = f.constraints_jac(values[f.keys])
-                    for j in jac:
-                        all.append(j.flatten())
-
-        if len(all) == 0:
-            return np.zeros(0)
-
-        return np.concatenate(all)
+        return init, arrays
 
     @jitmethod
     # TODO: Can speed up at all?

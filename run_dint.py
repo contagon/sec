@@ -12,6 +12,9 @@ import jax.numpy as np
 import matplotlib.pyplot as plt
 from tqdm import trange
 
+jax.config.update("jax_platforms", "cpu")
+np.set_printoptions(precision=3, suppress=True)
+
 
 def vals2state(vals: core.Variables) -> np.ndarray:
     x = []
@@ -45,8 +48,7 @@ def vals2state(vals: core.Variables) -> np.ndarray:
 
 # Set up the simulation
 xg = np.array([10.0, 0, 0, 0])
-sys = DoubleIntegratorSim(5, 0.1, num_landmarks=10, dist=0.5)
-# sys.landmarks = np.array([[5.0, -0.1]])
+sys = DoubleIntegratorSim(5, 0.1, num_landmarks=10, dist=0.7)
 graph = core.Graph()
 vals = core.Variables()
 

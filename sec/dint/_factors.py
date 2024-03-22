@@ -67,6 +67,7 @@ class LandmarkAvoid(core.Factor):
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
+        # TODO: Use tangent line for distance from circle?
         x, l = values
         d = x[:2] - l
         return np.array([d.T @ d])
