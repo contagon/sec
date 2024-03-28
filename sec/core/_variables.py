@@ -6,6 +6,7 @@ import jax.numpy as np
 from typing import TypeVar, Union
 from collections import OrderedDict
 from collections.abc import Iterable
+import sec.symbols as sym
 
 GroupType = TypeVar("GroupType", bound=jaxlie.MatrixLieGroup)
 Variable = Union[jax.Array, GroupType]
@@ -73,7 +74,7 @@ class Variables:
         # TODO: This is really inefficent, but things go poorly if I don't do
         self.reindex()
 
-    def rm(self, key):
+    def remove(self, key):
         del self.vals[key]
         self.reindex()
 
@@ -116,6 +117,17 @@ class Variables:
         for key, val in self.vals.items():
             out.append(val)
         return np.concatenate(out)
+
+    def stacked(self):
+        # They're always in order b/c of the OrderedDict
+        out = {}
+        for key, val in self.vals.items():
+            c = sym.str(key)[0]
+            if c not in out:
+                out[c] = []
+            out[c].append(val)
+
+        return {k: np.vstack(v) for k, v in out.items()}
 
 
 #     def _tree_flatten(self):

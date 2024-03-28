@@ -31,17 +31,17 @@ class Graph:
 
     def remove(self, idx):
         key, idx = self.factor_idx.pop(idx)
-        self.factors[key].pop(idx)
+        self.factors[key][idx] = None
 
     @property
     def dim_con(self):
-        return sum(
-            [
-                f[0].constraints_dim * len(f)
-                for f in self.factors.values()
-                if f[0].has_con
-            ]
-        )
+        count = 0
+        for key, factor in self.factors.items():
+            for f in factor:
+                if f is not None and f.has_con:
+                    count += f.constraints_dim
+
+        return count
 
     @jitmethod
     def objective(self, x: jax.Array) -> float:
@@ -70,11 +70,13 @@ class Graph:
         out = self._loop_factors(x, loop, 0)[1]
         return np.concatenate([j.flatten() for j in out if j is not None])
 
-    @jitmethod
+    # @jitmethod
     def constraints_bounds(self):
         all_lb, all_ub = [], []
         for key, factor in self.factors.items():
             for f in factor:
+                if f is None:
+                    continue
                 if f.has_con:
                     lb, ub = f.constraints_bounds
                     all_lb.append(lb)
@@ -129,18 +131,21 @@ class Graph:
 
         arrays = []
         for factor_type, factors in self.factors.items():
-            stacked_f = pytrees_stack(factors)
+            factors_parsed = [f for f in factors if f is not None]
+            if len(factors_parsed) == 0:
+                continue
+            stacked_f = pytrees_stack(factors_parsed)
 
             stacked_v = jax.tree_map(
                 lambda f: values[f.keys],
-                factors,
+                factors_parsed,
                 is_leaf=lambda n: isinstance(n, Factor),
             )
             stacked_v = pytrees_stack(stacked_v)
 
             stacked_i = jax.tree_map(
                 lambda f: values.start_idx(f.keys),
-                factors,
+                factors_parsed,
                 is_leaf=lambda n: isinstance(n, Factor),
             )
             stacked_i = pytrees_stack(stacked_i)
@@ -151,13 +156,15 @@ class Graph:
 
         return init, arrays
 
-    @jitmethod
+    # @jitmethod
     # TODO: Can speed up at all?
     def jacobianstructure(self):
         row_all, col_all = [], []
         row_idx = 0
         for factors in self.factors.values():
             for f in factors:
+                if f is None:
+                    continue
                 if not f.has_con:
                     continue
                 num_rows = f.constraints_dim
@@ -187,7 +194,13 @@ class Graph:
 
     #     return np.concatenate(all)
 
-    def solve(self, x0: Variables, jit: bool = True, verbose: bool = False):
+    def solve(
+        self,
+        x0: Variables,
+        verbose: bool = False,
+        check_derivative: bool = False,
+        max_iter: int = 100,
+    ):
 
         self.template = x0
         x = x0.to_vec()
@@ -203,8 +216,12 @@ class Graph:
             cl=cl,
             cu=cu,
         )
-        nlp.add_option("max_iter", 200)
-        # if not verbose:
-        # nlp.add_option("print_level", 0)
+        # Turn off the printed header
+        nlp.add_option("sb", "yes")
+        nlp.add_option("max_iter", max_iter)
+        if check_derivative:
+            nlp.add_option("derivative_test", "first-order")
+        if not verbose:
+            nlp.add_option("print_level", 0)
         sol, info = nlp.solve(x)
         return vec2var(sol, self.template), info
