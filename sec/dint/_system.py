@@ -90,7 +90,7 @@ class DoubleIntegratorSim:
             + jax.random.normal(subkey, self.landmarks.shape) * self.std_R
         )
 
-    def plot(self, vals, idx):
+    def plot(self, idx, vals, gt=None):
         import matplotlib.pyplot as plt
 
         if not self.plot_started:
@@ -98,18 +98,45 @@ class DoubleIntegratorSim:
             self.fig, self.ax = plt.subplots(1, 1)
             self.ax = [self.ax]
 
-            (self.traj_est,) = self.ax[0].plot(
-                [], [], c="b", marker="o", label="Estimate"
-            )
-            (self.traj_fut,) = self.ax[0].plot([], [], c="r", marker="o", label="Plan")
+            color_gt = "k"
+            color_est = "b"
+            color_fut = "r"
 
-            self.lm_est = self.ax[0].scatter([], [], c="b")
-            self.lm_true = self.ax[0].scatter(
-                self.landmarks[:, 0], self.landmarks[:, 1], c="k", alpha=0.5
+            self.traj_gt = self.ax[0].plot(
+                [],
+                [],
+                c=color_gt,
+                marker="o",
+                label="Estimate",
+                ms=3,
             )
+            (self.traj_est,) = self.ax[0].plot(
+                [],
+                [],
+                c=color_est,
+                marker="o",
+                label="Estimate",
+                ms=3,
+            )
+            (self.traj_fut,) = self.ax[0].plot(
+                [], [], c=color_fut, marker="o", label="Plan", ms=3
+            )
+
+            self.lm_est = self.ax[0].scatter([], [], c=color_est)
+            self.lm_true = self.ax[0].scatter(
+                self.landmarks[:, 0], self.landmarks[:, 1], c=color_gt, alpha=0.5
+            )
+
+            self.circle_est = []
+            for l in self.landmarks:
+                self.circle_est.append(
+                    plt.Circle(l, self.dist, fill=False, color=color_est, alpha=0.0)
+                )
+                self.ax[0].add_artist(self.circle_est[-1])
 
             self.ax[0].set_xlim([-1, 11])
             self.ax[0].set_ylim([-3, 3])
+            self.ax[0].set_aspect("equal")
 
             if self.plot_live:
                 plt.ion()
@@ -127,10 +154,12 @@ class DoubleIntegratorSim:
 
         self.lm_est.set_offsets(L)
 
-        # ax[0].scatter(self.landmarks[:, 0], self.landmarks[:, 1], c="k", alpha=0.5)
-        # ax[0].scatter(L[:, 0], L[:, 1], c="b")
-        # for l in L:
-        #     ax[0].add_artist(plt.Circle(l, self.dist, fill=False, color="b"))
+        for i, l in enumerate(L):
+            self.circle_est[i].set(center=l, alpha=0.5)
+
+        if gt is not None:
+            X = gt.stacked()["X"]
+            self.traj_gt[0].set_data(X[:, 0], X[:, 1])
 
         plt.draw()
         plt.pause(0.001)

@@ -17,9 +17,8 @@ from tqdm import trange
 
 jax.config.update("jax_platforms", "cpu")
 jax.config.update("jax_enable_x64", True)
-# np.set_printoptions(precision=3, suppress=True)
+np.set_printoptions(precision=4)
 
-# TODO: Double check have only factors you'd expect at the end - that we didn't miss anything
 # TODO: Begin estimating parameters
 # TODO: Unfix landmarks and start estimating them. Initialize as they're seen
 # TODO: Only measure landmarks within a certain distance
@@ -33,7 +32,7 @@ vals = core.Variables()
 # ------------------------- Setup the initial graph & values ------------------------- #
 graph.add(FixConstraint([sym.X(0)], sys.x0))
 vals.add(sym.X(0), sys.x0)
-graph.add(FixConstraint([sym.P(0)], sys.params))
+graph.add(PriorFactor([sym.P(0)], sys.params, np.eye(4) * 0.01**2))
 vals.add(sym.P(0), sys.params)
 
 indices = [[] for i in range(sys.N)]
@@ -46,7 +45,7 @@ for i in range(sys.N):
             sys.dynamics,
             sys.xg,
             np.eye(4),
-            1 * np.eye(2),
+            np.eye(2),
         )
     )
     indices[i].append(f_idx)
@@ -69,15 +68,20 @@ graph.add(FinalCost([sym.X(sys.N)], sys.xg, 100 * np.eye(4)))
 
 vals, _ = graph.solve(vals, verbose=False, max_iter=1000)
 print("Step 0 done")
-sys.plot(vals, 0)
+sys.plot(0, vals)
+
+# plt.show(block=True)
+# quit()
 
 # ------------------------- Iterate through the simulation ------------------------- #
 x = sys.x0.copy()
+gt = core.Variables({sym.X(0): sys.x0})
 for i in range(sys.N):
     # Step
     u = vals[sym.U(i)]
     x = sys.dynamics(sys.params, x, u)
     z = sys.measure(x)
+    gt[sym.X(i + 1)] = x.copy()
 
     # Remove old factors/values
     vals.remove(sym.U(i))
@@ -107,11 +111,9 @@ for i in range(sys.N):
     c_after = graph.objective(vals_new.to_vec())
 
     print(f"Step {i+1} done", c_before, c_after, c_before - c_after)
-    sys.plot(vals, i + 1)
+    sys.plot(i + 1, vals, gt)
     if c_before - c_after > -1e3:
-        print("Accepted")
+        print("Accepted", vals[sym.P(0)])
         vals = vals_new
 
 plt.show(block=True)
-
-print(i, vals.vals.keys())
