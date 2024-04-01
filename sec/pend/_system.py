@@ -44,6 +44,9 @@ class PendulumSim:
         self.key, subkey = jax.random.split(self.key)
         return subkey
 
+    def perturb(self, size, std=1e-4):
+        return jax.random.normal(self.getkey(), (size,)) * std
+
     @staticmethod
     @jax.jit
     def _cont_system(params, x, u):
@@ -74,8 +77,8 @@ class PendulumSim:
 
         if not self.plot_started:
             self.plot_started = True
-            self.fig, self.ax = plt.subplots(1, 1)
-            self.ax = [self.ax]
+            self.fig, self.ax = plt.subplots(1, 2)
+            # self.ax = [self.ax]
 
             color_gt = "k"
             color_est = "b"
@@ -101,10 +104,15 @@ class PendulumSim:
                 [], [], c=color_fut, marker="o", label="Plan", ms=3
             )
 
+            (self.u_fut,) = self.ax[1].plot([], [], c=color_fut, label="u")
+            (self.u_est,) = self.ax[1].plot([], [], c=color_est, label="u_gt")
+
             l = self.params[1]
-            self.ax[0].set_xlim([-0.1, self.T + 1])
+            self.ax[0].set_xlim([-0.1, self.T + 0.1])
             self.ax[0].set_ylim([-0.8, np.pi + 1])
-            self.ax[0].set_aspect("equal")
+
+            self.ax[1].set_xlim([-0.1, self.T + 0.1])
+            self.ax[1].set_ylim([-5, 5])
 
             if self.plot_live:
                 plt.ion()
@@ -118,9 +126,14 @@ class PendulumSim:
         self.traj_est.set_data(t[: idx + 1], X[: idx + 1])
         self.traj_fut.set_data(t[idx:], X[idx:])
 
+        U_fut = s["U"][:, 0]
+        self.u_fut.set_data(t[idx:-1], U_fut)
+
         if gt is not None:
             X = gt.stacked()["X"]
             self.traj_gt[0].set_data(t[: len(X)], X[:, 0])
+            U_past = gt.stacked()["U"][:, 0]
+            self.u_est.set_data(t[:idx], U_past)
 
         plt.draw()
         plt.pause(0.001)

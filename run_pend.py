@@ -8,6 +8,7 @@ from sec.pend import (
     EncoderMeasure,
     PastDynamics,
     BoundedConstraint,
+    PriorFactor,
 )
 import jax
 import jax.numpy as np
@@ -18,8 +19,8 @@ jax.config.update("jax_platforms", "cpu")
 jax.config.update("jax_enable_x64", True)
 np.set_printoptions(precision=4)
 
-# TODO: Unfix landmarks and start estimating them. Initialize as they're seen
-# TODO: Only measure landmarks within a certain distance
+# TODO: Once parameters are re-estimated it really struggles to refind a trajectory.
+# I'm not really sure why. Maybe need to code up the Hessian? Remove dependence on params better in control factors?
 
 # Set up the simulation
 sys = PendulumSim(4, 0.05, plot_live=True)
@@ -29,7 +30,7 @@ vals = core.Variables()
 # ------------------------- Setup the initial graph & values ------------------------- #
 graph.add(FixConstraint([sym.X(0)], sys.x0))
 vals.add(sym.X(0), sys.x0)
-graph.add(FixConstraint([sym.P(0)], sys.params))  # * 1.1, np.eye(4) * 0.05**2))
+graph.add(PriorFactor([sym.P(0)], sys.params * 1.1, np.eye(2) * 0.05**2))
 vals.add(sym.P(0), sys.params)
 
 indices = [[] for i in range(sys.N)]
@@ -52,10 +53,8 @@ for i in range(sys.N):
 
 xs = np.linspace(sys.x0, sys.xg, sys.N + 1)
 for i, x in enumerate(xs[1:]):
-    key = sys.getkey()
-    u = jax.random.normal(key, (1,)) * 0.01
-    vals.add(sym.X(i + 1), x)
-    vals.add(sym.U(i), u)
+    vals.add(sym.X(i + 1), x + sys.perturb(2))
+    vals.add(sym.U(i), sys.perturb(1))
 
 graph.add(FinalCost([sym.X(sys.N)], sys.xg, 100 * np.eye(2)))
 
@@ -72,6 +71,7 @@ for i in range(sys.N):
     x = sys.dynamics(sys.params, x, u)
     z = sys.measure(x)
     gt[sym.X(i + 1)] = x.copy()
+    gt[sym.U(i)] = vals[sym.U(i)]
 
     # Remove old factors/values
     vals.remove(sym.U(i))
@@ -96,17 +96,14 @@ for i in range(sys.N):
     graph.template = vals
     c_before = graph.objective(vals.to_vec())
 
-    vals_new, _ = graph.solve(vals, verbose=True, max_iter=500)
+    vals_new, _ = graph.solve(vals, verbose=False, max_iter=1000)
 
     c_after = graph.objective(vals_new.to_vec())
 
     print(f"Step {i+1} done", c_before, c_after, c_before - c_after)
     sys.plot(i + 1, vals, gt)
-    # if c_before - c_after > -1e5:
-    #     print("Accepted", vals[sym.P(0)])
-    #     vals = vals_new
-    # else:
-    #     quit()
-    vals = vals_new
+    if c_before - c_after > -1e3:
+        print("Accepted", vals[sym.P(0)])
+        vals = vals_new
 
 plt.show(block=True)
