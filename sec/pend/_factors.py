@@ -63,11 +63,11 @@ class System(core.Factor):
     def constraints_bounds(self) -> tuple[np.ndarray, np.ndarray]:
         return np.zeros(2), np.zeros(2)
 
-    # @overrides
-    # def constraints_jac(self, values: list[core.Variable]):
-    #     jac = super().constraints_jac(values)
-    #     jac[0] = np.zeros((2, 2))
-    #     return jac
+    @overrides
+    def constraints_jac(self, values: list[core.Variable]):
+        jac = super().constraints_jac(values)
+        jac[0] = np.zeros((2, 2))
+        return jac
 
 
 # @jitclass
@@ -119,15 +119,19 @@ class EncoderMeasure(core.Factor):
 @jdc.pytree_dataclass
 class PastDynamics(core.Factor):
     dyn: jdc.Static[callable]
-    u_mm: np.ndarray
     W: np.ndarray
 
     @overrides
     def residual(self, values: list[core.Variable]) -> np.ndarray:
-        params, x, x_next = values
-        return x_next - self.dyn(params, x, self.u_mm)
+        params, x, x_next, u, w = values
+        return w
 
-    # TODO: WRONG
+    @overrides
+    def constraints(self, values: list[core.Variable]) -> np.ndarray:
+        params, x, x_next, u, w = values
+        return x_next - self.dyn(params, x, u) + w
+
     @property
-    def residual_dim(self) -> int:
-        return self.u_mm.shape[0]
+    @overrides
+    def constraints_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        return np.zeros(2), np.zeros(2)

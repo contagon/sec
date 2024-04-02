@@ -50,11 +50,10 @@ class PendulumSim:
     @staticmethod
     @jax.jit
     def _cont_system(params, x, u):
-        # TODO: Fix these!
         m, l = params
         g = 9.81
         theta, theta_dot = x
-        theta_ddot = -g / l * np.sin(theta) + u[0] / (m * l**2) - 0.1 * theta_dot
+        theta_ddot = -g / l * np.sin(theta) + u[0] / (m * l**2) - 0.01 * theta_dot
         return np.array([theta_dot, theta_ddot])
 
     @jitmethod
@@ -127,7 +126,7 @@ class PendulumSim:
         self.traj_fut.set_data(t[idx:], X[idx:])
 
         U_fut = s["U"][:, 0]
-        self.u_fut.set_data(t[idx:-1], U_fut)
+        self.u_fut.set_data(t[idx:-1], U_fut[idx:])
 
         if gt is not None:
             X = gt.stacked()["X"]

@@ -23,15 +23,16 @@ np.set_printoptions(precision=4)
 # I'm not really sure why. Maybe need to code up the Hessian? Remove dependence on params better in control factors?
 
 # Set up the simulation
-sys = PendulumSim(4, 0.05, plot_live=True)
+sys = PendulumSim(4, 0.1, plot_live=True)
 graph = core.Graph()
 vals = core.Variables()
 
 # ------------------------- Setup the initial graph & values ------------------------- #
 graph.add(FixConstraint([sym.X(0)], sys.x0))
 vals.add(sym.X(0), sys.x0)
-graph.add(PriorFactor([sym.P(0)], sys.params * 1.1, np.eye(2) * 0.05**2))
-vals.add(sym.P(0), sys.params)
+# graph.add(PriorFactor([sym.P(0)], sys.params * 1.1, np.eye(2) * 0.2**2))
+graph.add(BoundedConstraint([sym.P(0)], np.array([0.8, 0.3]), np.array([1.4, 0.9])))
+vals.add(sym.P(0), sys.params * 1.1)
 
 indices = [[] for i in range(sys.N)]
 
@@ -62,6 +63,7 @@ vals, _ = graph.solve(vals, verbose=True, max_iter=1000)
 print("Step 0 done", vals[sym.P(0)])
 sys.plot(0, vals)
 
+
 # ------------------------- Iterate through the simulation ------------------------- #
 x = sys.x0.copy()
 gt = core.Variables({sym.X(0): sys.x0})
@@ -74,29 +76,30 @@ for i in range(sys.N):
     gt[sym.U(i)] = vals[sym.U(i)]
 
     # Remove old factors/values
-    vals.remove(sym.U(i))
     for idx in indices[i]:
         graph.remove(idx)
 
     # Put new ones in
     graph.add(
         PastDynamics(
-            [sym.P(0), sym.X(i), sym.X(i + 1)],
+            [sym.P(0), sym.X(i), sym.X(i + 1), sym.U(i), sym.W(i)],
             sys.dynamics,
-            u,
             np.eye(2) * sys.std_Q**2,
         )
     )
+    graph.add(FixConstraint([sym.U(i)], u))
+    vals.add(sym.W(i), np.zeros(2))
 
     graph.add(EncoderMeasure([sym.X(i + 1)], z, np.eye(1) * sys.std_R**2))
 
-    if i < 5:
+    if i < 3:
         continue
 
     graph.template = vals
     c_before = graph.objective(vals.to_vec())
 
-    vals_new, _ = graph.solve(vals, verbose=False, max_iter=1000)
+    vals_new, info = graph.solve(vals, verbose=False, max_iter=200)
+    print(info["status_msg"])
 
     c_after = graph.objective(vals_new.to_vec())
 
