@@ -21,6 +21,7 @@ class PendulumSim:
         dt,
         std_Q=0.01,
         std_R=0.01,
+        max_u=3,
         params=np.array([1, 0.5]),  # [m, l]
         plot_live=False,
         filename=None,
@@ -31,6 +32,7 @@ class PendulumSim:
         self.std_Q = std_Q
         self.std_R = std_R
         self.params = params
+        self.max_u = max_u
         self.key = jax.random.PRNGKey(0)
 
         self.x0 = np.array([1e-6, 0])
@@ -103,15 +105,19 @@ class PendulumSim:
                 [], [], c=color_fut, marker="o", label="Plan", ms=3
             )
 
-            (self.u_fut,) = self.ax[1].plot([], [], c=color_fut, label="u")
-            (self.u_est,) = self.ax[1].plot([], [], c=color_est, label="u_gt")
+            (self.u_fut,) = self.ax[1].plot(
+                [], [], c=color_fut, ms=3, marker="o", label="u"
+            )
+            (self.u_est,) = self.ax[1].plot(
+                [], [], c=color_est, ms=3, marker="o", label="u_gt"
+            )
 
             l = self.params[1]
             self.ax[0].set_xlim([-0.1, self.T + 0.1])
             self.ax[0].set_ylim([-0.8, np.pi + 1])
 
             self.ax[1].set_xlim([-0.1, self.T + 0.1])
-            self.ax[1].set_ylim([-5, 5])
+            self.ax[1].set_ylim([-1.5 * self.max_u, 1.5 * self.max_u])
 
             if self.plot_live:
                 plt.ion()
@@ -125,14 +131,14 @@ class PendulumSim:
         self.traj_est.set_data(t[: idx + 1], X[: idx + 1])
         self.traj_fut.set_data(t[idx:], X[idx:])
 
-        U_fut = s["U"][:, 0]
-        self.u_fut.set_data(t[idx:-1], U_fut[idx:])
+        U = s["U"][:, 0]
+        if idx + 1 < len(U):
+            self.u_est.set_data(t[: idx + 1], U[: idx + 1])
+        self.u_fut.set_data(t[idx:-1], U[idx:])
 
         if gt is not None:
             X = gt.stacked()["X"]
             self.traj_gt[0].set_data(t[: len(X)], X[:, 0])
-            U_past = gt.stacked()["U"][:, 0]
-            self.u_est.set_data(t[:idx], U_past)
 
         plt.draw()
         plt.pause(0.001)

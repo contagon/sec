@@ -3,11 +3,9 @@ import jax
 from typing import Union, TypeVar
 import jaxlie
 from ._helpers import jitclass
+from ._variables import Variables, Variable
 import jax_dataclasses as jdc
 from functools import cached_property
-
-GroupType = TypeVar("GroupType", bound=jaxlie.MatrixLieGroup)
-Variable = Union[jax.Array, GroupType]
 
 
 @jitclass

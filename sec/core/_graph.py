@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as np
+from jax.experimental.sparse import BCOO
 from collections import namedtuple
 import cyipopt
 
@@ -180,49 +181,80 @@ class Graph:
 
         return np.concatenate(row_all), np.concatenate(col_all)
 
-    def hessian(self, x: jax.Array, lagrange=None, obj_factor=None) -> np.ndarray:
+    # def hessian(self, x: jax.Array, lagrange, obj_factor) -> np.ndarray:
+    #     hess = self._hessian(x, lagrange, obj_factor)
+    #     indices = hess.indices
+    #     lower = indices[:, 0] >= indices[:, 1]
+    #     return hess.data[lower]
+
+    # def hessianstructure(self):
+    #     hess = self._hessian(self.template.to_vec(), np.zeros(self.dim_con), 1)
+    #     indices = hess.indices
+    #     lower = indices[:, 0] >= indices[:, 1]
+    #     return indices[lower, 0], indices[lower, 1]
+
+    def _hessian(self, x: jax.Array, lagrange=None, obj_factor=None) -> np.ndarray:
         values = vec2var(x, self.template)
         all = []
 
+        count = 0
         for factors in self.factors.values():
             for f in factors:
+                if f is None:
+                    continue
+
+                # Objective hessian
                 if f.has_cost:
                     hess = f.cost_hess(values[f.keys])
-                    for i, h in enumerate(hess):
-                        indices = np.tril_indices_from(h[i])
-                        all.append(h[i][indices].flatten())
+                    for h in hess:
+                        for j in h:
+                            all.append(obj_factor * j.flatten())
 
-                        for j in h[i + 1 :]:
-                            all.append(j.flatten())
+                # Lagrange hessian
+                if f.has_con:
+                    hess = f.constraints_hess(values[f.keys])
+                    for first_partial in hess:
+                        for second_partial in first_partial:
+                            for i, constraint in enumerate(second_partial):
+                                all.append(lagrange[count + i] * constraint.flatten())
+                    count += f.constraints_dim
 
-        return np.concatenate(all)
+        vals = np.concatenate(all)
+        indices = self._hessianstructure()
+        indices = np.column_stack(indices)
 
-    def hessianstructure(self):
+        return BCOO((vals, indices), shape=(self.template.dim, self.template.dim))
+
+    def _hessianstructure(self):
         row_all, col_all = [], []
         row_idx = 0
         for factors in self.factors.values():
             for f in factors:
                 if f is None:
                     continue
-                if not f.has_cost:
-                    continue
+                if f.has_cost:
+                    for key1 in f.keys:
+                        row_idx = self.template.idx(key1)
+                        for key2 in f.keys:
+                            col, row = np.meshgrid(
+                                np.arange(*row_idx),
+                                np.arange(*self.template.idx(key2)),
+                            )
+                            col_all.append(col.flatten())
+                            row_all.append(row.flatten())
 
-                for i, key1 in enumerate(f.keys):
-                    # Get the spot with itself
-                    row_idx = self.template.idx(key1)
-                    row, col = np.tril_indices(row_idx[1] - row_idx[0])
-                    row += row_idx[0]
-                    col += row_idx[0]
-                    row_all.append(row)
-                    col_all.append(col)
-
-                    for key2 in f.keys[i + 1 :]:
-                        col, row = np.meshgrid(
-                            np.arange(*row_idx),
-                            np.arange(*self.template.idx(key2)),
-                        )
-                        col_all.append(col.flatten())
-                        row_all.append(row.flatten())
+                if f.has_con:
+                    for key1 in f.keys:
+                        row_idx = self.template.idx(key1)
+                        for key2 in f.keys:
+                            col, row = np.meshgrid(
+                                np.arange(*row_idx),
+                                np.arange(*self.template.idx(key2)),
+                            )
+                            # Probably a faster way to do this
+                            for i in range(f.constraints_dim):
+                                col_all.append(col.flatten())
+                                row_all.append(row.flatten())
 
         if len(row_all) == 0:
             return np.zeros(0), np.zeros(0)
@@ -257,7 +289,7 @@ class Graph:
         nlp.add_option("max_iter", max_iter)
         nlp.add_option("tol", tol)
         if check_derivative:
-            nlp.add_option("derivative_test", "first-order")
+            nlp.add_option("derivative_test", "second-order")
         if not verbose:
             nlp.add_option("print_level", 0)
         sol, info = nlp.solve(x)
