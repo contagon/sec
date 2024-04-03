@@ -25,9 +25,7 @@ np.set_printoptions(precision=4)
 # TODO: Only measure landmarks within a certain distance
 
 # Set up the simulation
-sys = WheelSim(
-    5, 0.1, num_landmarks=10, dist=0.45, params=np.array([0.4, 0.41]), plot_live=True
-)
+sys = WheelSim(5, 0.1, dist=0.6, params=np.array([0.4, 0.43]), plot_live=True)
 graph = core.Graph()
 vals = core.Variables()
 
@@ -35,7 +33,7 @@ vals = core.Variables()
 graph.add(FixConstraint([sym.X(0)], sys.x0))
 vals.add(sym.X(0), sys.x0)
 idx_fix_params = graph.add(FixConstraint([sym.P(0)], sys.params * 1.25))
-vals.add(sym.P(0), sys.params * 1.1)
+vals.add(sym.P(0), sys.params * 1.25)
 
 indices = [[] for i in range(sys.N)]
 sum_vals = lambda vals: np.sum(vals[0])
@@ -68,18 +66,10 @@ for i in range(sys.N):
     )
     indices[i].append(f_idx)
 
-    for idx, l in enumerate(sys.landmarks):
-        f_idx = graph.add(LandmarkAvoid([sym.X(i), sym.L(idx)], sys.dist))
-        indices[i].append(f_idx)
-
 xs = np.linspace(sys.x0, sys.xg, sys.N + 1)
 for i, x in enumerate(xs[1:]):
     vals.add(sym.X(i + 1), x + sys.perturb(3))
     vals.add(sym.U(i), sys.perturb(2))
-
-for i, l in enumerate(sys.landmarks):
-    vals.add(sym.L(i), l)
-    graph.add(FixConstraint([sym.L(i)], l))
 
 graph.add(FinalCost([sym.X(sys.N)], sys.xg, 100 * np.eye(3)))
 
@@ -95,6 +85,7 @@ graph.add(BoundedConstraint([sym.P(0)], np.array([0.2, 0.2]), np.array([0.6, 0.6
 # ------------------------- Iterate through the simulation ------------------------- #
 x = sys.x0.copy()
 gt = core.Variables({sym.X(0): sys.x0})
+lm_seen = set()
 for i in range(sys.N):
     # Step
     u = vals[sym.U(i)]
@@ -117,6 +108,19 @@ for i in range(sys.N):
     graph.add(FixConstraint([sym.U(i)], u))
     vals.add(sym.W(i), np.zeros(3))
 
+    # Process landmarks
+    lm_new = set(z.keys()) - lm_seen
+    lm_seen.update(lm_new)
+    if len(lm_new) > 0:
+        print("New landmarks detected", lm_new)
+    for lm in lm_new:
+        loc = x[1:3] + z[lm]
+        vals.add(sym.L(lm), loc)
+
+        for j in range(i + 1, sys.N):
+            f_idx = graph.add(LandmarkAvoid([sym.X(j), sym.L(lm)], sys.dist))
+            indices[j].append(f_idx)
+
     for idx, mm in z.items():
         graph.add(
             LandmarkMeasure([sym.X(i + 1), sym.L(idx)], mm, np.eye(2) * sys.std_R**2)
@@ -128,7 +132,7 @@ for i in range(sys.N):
     graph.template = vals
     c_before = graph.objective(vals.to_vec())
 
-    vals_new, info = graph.solve(vals, verbose=False, max_iter=500)
+    vals_new, info = graph.solve(vals, verbose=False, max_iter=1000)
     print(info["status_msg"])
 
     c_after = graph.objective(vals_new.to_vec())

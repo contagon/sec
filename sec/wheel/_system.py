@@ -25,7 +25,6 @@ class WheelSim:
         dist=0.5,
         range=2.5,
         params=np.array([0.4, 0.4]),  # [r_l, r_r]
-        num_landmarks=10,
         baseline=1,
         plot_live=False,
         filename=None,
