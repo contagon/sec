@@ -117,7 +117,7 @@ for i in range(sys.N):
     graph.add(FixConstraint([sym.U(i)], u))
     vals.add(sym.W(i), np.zeros(3))
 
-    for idx, mm in enumerate(z):
+    for idx, mm in z.items():
         graph.add(
             LandmarkMeasure([sym.X(i + 1), sym.L(idx)], mm, np.eye(2) * sys.std_R**2)
         )
@@ -133,10 +133,10 @@ for i in range(sys.N):
 
     c_after = graph.objective(vals_new.to_vec())
 
-    print(f"Step {i+1} done", c_before, c_after, c_before - c_after)
+    print(f"Step {i+1} done", vals[sym.P(0)], c_before - c_after)
     sys.plot(i + 1, vals, gt)
-    if c_before - c_after > -1e2:
-        print("Accepted", vals[sym.P(0)])
+    if c_before - c_after > -1e4:
+        print("Accepted")
         vals = vals_new
 
 plt.show(block=True)

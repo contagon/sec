@@ -23,6 +23,7 @@ class WheelSim:
         std_R=0.01,
         max_u=8,
         dist=0.5,
+        range=2.5,
         params=np.array([0.4, 0.4]),  # [r_l, r_r]
         num_landmarks=10,
         baseline=1,
@@ -38,6 +39,7 @@ class WheelSim:
         self.max_u = max_u
         self.dist = dist
         self.baseline = baseline
+        self.range = range
         self.key = jax.random.PRNGKey(0)
 
         self.x0 = np.array([0, 0, 0])
@@ -84,9 +86,16 @@ class WheelSim:
         return self.dynamics(self.params, x, u) + self.perturb(3, self.std_Q)
 
     def measure(self, x):
-        return (
-            self.landmarks - x[1:3] + self.perturb((len(self.landmarks), 2), self.std_R)
-        )
+        dist = np.linalg.norm(self.landmarks - x[1:3], axis=1)
+        use = np.where(dist < self.range)[0]
+
+        measure = {}
+        for i in use:
+            measure[int(i)] = (
+                self.landmarks[int(i)] - x[1:3] + self.perturb(2, self.std_R)
+            )
+
+        return measure
 
     def plot(self, idx, vals, gt=None):
         import matplotlib.pyplot as plt
@@ -126,6 +135,11 @@ class WheelSim:
                     self.landmarks[:, 0], self.landmarks[:, 1], c=color_gt, alpha=0.5
                 )
 
+                self.idx_dist = plt.Circle(
+                    self.x0, self.range, fill=False, color=color_gt, alpha=0.3
+                )
+                self.ax[0].add_artist(self.idx_dist)
+
             self.circle_est = []
             for l in self.landmarks:
                 self.circle_est.append(
@@ -154,12 +168,15 @@ class WheelSim:
             for i, l in enumerate(L):
                 self.circle_est[i].set(center=l, alpha=0.5)
 
+            self.idx_dist.set(center=X[idx, 1:3])
+
         if gt is not None:
             X = gt.stacked()["X"]
             self.traj_gt.set_data(X[:, 1], X[:, 2])
 
         plt.draw()
-        plt.pause(0.001)
+        if self.plot_live:
+            plt.pause(0.001)
 
         if self.filename is not None:
             plt.savefig(self.filename.format(idx))
