@@ -1,13 +1,16 @@
 import sec.core as core
 import sec.symbols as sym
-from sec.pend import (
-    PendulumSim,
+from sec.wheel import (
+    WheelSim,
     FixConstraint,
     System,
+    LandmarkAvoid,
     FinalCost,
-    EncoderMeasure,
+    PriorFactor,
+    LandmarkMeasure,
     PastDynamics,
     BoundedConstraint,
+    BoundedConstraintLambda,
 )
 import jax
 import jax.numpy as np
@@ -18,19 +21,24 @@ jax.config.update("jax_platforms", "cpu")
 jax.config.update("jax_enable_x64", True)
 np.set_printoptions(precision=4)
 
+# TODO: Unfix landmarks and start estimating them. Initialize as they're seen
+# TODO: Only measure landmarks within a certain distance
 
 # Set up the simulation
-sys = PendulumSim(4, 0.1, max_u=1, plot_live=True)
+sys = WheelSim(
+    5, 0.1, num_landmarks=10, dist=0.45, params=np.array([0.4, 0.41]), plot_live=True
+)
 graph = core.Graph()
 vals = core.Variables()
 
 # ------------------------- Setup the initial graph & values ------------------------- #
 graph.add(FixConstraint([sym.X(0)], sys.x0))
 vals.add(sym.X(0), sys.x0)
-idx_fix_params = graph.add(FixConstraint([sym.P(0)], sys.params * 0.9))
-vals.add(sym.P(0), sys.params * 0.9)
+idx_fix_params = graph.add(FixConstraint([sym.P(0)], sys.params * 1.25))
+vals.add(sym.P(0), sys.params * 1.1)
 
 indices = [[] for i in range(sys.N)]
+sum_vals = lambda vals: np.sum(vals[0])
 
 x = sys.x0.copy()
 for i in range(sys.N):
@@ -39,30 +47,50 @@ for i in range(sys.N):
             [sym.P(0), sym.X(i), sym.X(i + 1), sym.U(i)],
             sys.dynamics,
             sys.xg,
-            np.eye(2),
-            0.1 * np.eye(1),
+            np.eye(3),
+            0.1 * np.eye(2),
         )
     )
     indices[i].append(f_idx)
 
     f_idx = graph.add(
-        BoundedConstraint([sym.U(i)], -sys.max_u * np.ones(1), sys.max_u * np.ones(1))
+        BoundedConstraint([sym.U(i)], -sys.max_u * np.ones(2), sys.max_u * np.ones(2))
     )
     indices[i].append(f_idx)
 
+    f_idx = graph.add(
+        BoundedConstraintLambda(
+            [sym.U(i)],
+            sum_vals,
+            np.array([0]),
+            np.array([np.inf]),
+        )
+    )
+    indices[i].append(f_idx)
+
+    for idx, l in enumerate(sys.landmarks):
+        f_idx = graph.add(LandmarkAvoid([sym.X(i), sym.L(idx)], sys.dist))
+        indices[i].append(f_idx)
+
 xs = np.linspace(sys.x0, sys.xg, sys.N + 1)
 for i, x in enumerate(xs[1:]):
-    vals.add(sym.X(i + 1), x + sys.perturb(2))
-    vals.add(sym.U(i), sys.perturb(1))
+    vals.add(sym.X(i + 1), x + sys.perturb(3))
+    vals.add(sym.U(i), sys.perturb(2))
 
-graph.add(FinalCost([sym.X(sys.N)], sys.xg, 100 * np.eye(2)))
+for i, l in enumerate(sys.landmarks):
+    vals.add(sym.L(i), l)
+    graph.add(FixConstraint([sym.L(i)], l))
 
-vals, _ = graph.solve(vals, verbose=True, max_iter=1000, check_derivative=False)
+graph.add(FinalCost([sym.X(sys.N)], sys.xg, 100 * np.eye(3)))
+
+vals, _ = graph.solve(vals, verbose=True, tol=1e-1, max_iter=2000)
 print("Step 0 done", vals[sym.P(0)])
 sys.plot(0, vals)
 
+# plt.show(block=True)
+
 graph.remove(idx_fix_params)
-graph.add(BoundedConstraint([sym.P(0)], np.array([0.8, 0.3]), np.array([1.4, 0.9])))
+graph.add(BoundedConstraint([sym.P(0)], np.array([0.2, 0.2]), np.array([0.6, 0.6])))
 
 # ------------------------- Iterate through the simulation ------------------------- #
 x = sys.x0.copy()
@@ -83,15 +111,18 @@ for i in range(sys.N):
         PastDynamics(
             [sym.P(0), sym.X(i), sym.X(i + 1), sym.U(i), sym.W(i)],
             sys.dynamics,
-            np.eye(2) * sys.std_Q**2,
+            np.eye(3) * sys.std_Q**2,
         )
     )
     graph.add(FixConstraint([sym.U(i)], u))
-    vals.add(sym.W(i), np.zeros(2))
+    vals.add(sym.W(i), np.zeros(3))
 
-    graph.add(EncoderMeasure([sym.X(i + 1)], z, np.eye(1) * sys.std_R**2))
+    for idx, mm in enumerate(z):
+        graph.add(
+            LandmarkMeasure([sym.X(i + 1), sym.L(idx)], mm, np.eye(2) * sys.std_R**2)
+        )
 
-    if i < 3:
+    if i < 1:
         continue
 
     graph.template = vals
@@ -104,7 +135,7 @@ for i in range(sys.N):
 
     print(f"Step {i+1} done", c_before, c_after, c_before - c_after)
     sys.plot(i + 1, vals, gt)
-    if c_before - c_after > -1e3:
+    if c_before - c_after > -1e2:
         print("Accepted", vals[sym.P(0)])
         vals = vals_new
 
