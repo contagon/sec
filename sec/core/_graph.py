@@ -70,7 +70,6 @@ class Graph:
         out = self._loop_factors(x, loop, 0)[1]
         return np.concatenate([j.flatten() for j in out if j is not None])
 
-    # @jitmethod
     def constraints_bounds(self):
         all_lb, all_ub = [], []
         for key, factor in self.factors.items():
@@ -156,7 +155,6 @@ class Graph:
 
         return init, arrays
 
-    # @jitmethod
     # TODO: Can speed up at all?
     def jacobianstructure(self):
         row_all, col_all = [], []
@@ -182,17 +180,54 @@ class Graph:
 
         return np.concatenate(row_all), np.concatenate(col_all)
 
-    # def hessian(self, x: jax.Array, lagrange, obj_factor) -> np.ndarray:
-    #     values = vec2var(x, self.template)
-    #     all = []
+    def hessian(self, x: jax.Array, lagrange=None, obj_factor=None) -> np.ndarray:
+        values = vec2var(x, self.template)
+        all = []
 
-    #     for factor in self.factors:
-    #         if factor.has_cost:
-    #             hess = factor.cost_hess(values[factor.keys])
-    #             for h in hess:
-    #                 all.append(h)
+        for factors in self.factors.values():
+            for f in factors:
+                if f.has_cost:
+                    hess = f.cost_hess(values[f.keys])
+                    for i, h in enumerate(hess):
+                        indices = np.tril_indices_from(h[i])
+                        all.append(h[i][indices].flatten())
 
-    #     return np.concatenate(all)
+                        for j in h[i + 1 :]:
+                            all.append(j.flatten())
+
+        return np.concatenate(all)
+
+    def hessianstructure(self):
+        row_all, col_all = [], []
+        row_idx = 0
+        for factors in self.factors.values():
+            for f in factors:
+                if f is None:
+                    continue
+                if not f.has_cost:
+                    continue
+
+                for i, key1 in enumerate(f.keys):
+                    # Get the spot with itself
+                    row_idx = self.template.idx(key1)
+                    row, col = np.tril_indices(row_idx[1] - row_idx[0])
+                    row += row_idx[0]
+                    col += row_idx[0]
+                    row_all.append(row)
+                    col_all.append(col)
+
+                    for key2 in f.keys[i + 1 :]:
+                        col, row = np.meshgrid(
+                            np.arange(*row_idx),
+                            np.arange(*self.template.idx(key2)),
+                        )
+                        col_all.append(col.flatten())
+                        row_all.append(row.flatten())
+
+        if len(row_all) == 0:
+            return np.zeros(0), np.zeros(0)
+
+        return np.concatenate(row_all), np.concatenate(col_all)
 
     def solve(
         self,
@@ -200,6 +235,7 @@ class Graph:
         verbose: bool = False,
         check_derivative: bool = False,
         max_iter: int = 100,
+        tol=1e-2,
     ):
 
         self.template = x0
@@ -219,6 +255,7 @@ class Graph:
         # Turn off the printed header
         nlp.add_option("sb", "yes")
         nlp.add_option("max_iter", max_iter)
+        nlp.add_option("tol", tol)
         if check_derivative:
             nlp.add_option("derivative_test", "first-order")
         if not verbose:

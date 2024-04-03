@@ -80,3 +80,16 @@ def test_jacobian(graph_vals):
     jac_actual = BCOO((jac_vals, coords), shape=(graph.dim_con, vals.dim)).todense()
 
     assert np.array_equal(jac_expect, jac_actual)
+
+
+def test_hessian(graph_vals):
+    graph, vals = graph_vals
+
+    graph.template = vals
+    hess_expect = jax.hessian(graph.objective)(vals.to_vec())
+
+    hess_vals = graph.hessian(vals.to_vec())
+    coords = np.column_stack(graph.hessianstructure())
+    hess_actual = BCOO((hess_vals, coords), shape=(vals.dim, vals.dim)).todense()
+
+    assert np.array_equal(hess_expect, hess_actual)
