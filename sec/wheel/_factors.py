@@ -1,5 +1,5 @@
 from .. import core
-from ..core import jitclass
+from sec.core import jitclass, wrap2pi
 
 from overrides import overrides
 import jax.numpy as np
@@ -181,7 +181,14 @@ class LandmarkMeasure(core.Factor):
     @overrides
     def residual(self, values: list[core.Variable]) -> np.ndarray:
         x, l = values
-        return (l - x[1:]) - self.mm
+
+        theta, px, py = x
+        lx, ly = l
+
+        angle = wrap2pi(np.arctan2(ly - py, lx - px) - theta)
+        r = np.sqrt((lx - px) ** 2 + (ly - py) ** 2)
+
+        return np.array([r, angle]) - self.mm
 
     @property
     def residual_dim(self) -> int:

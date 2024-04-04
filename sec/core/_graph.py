@@ -288,6 +288,7 @@ class Graph:
         nlp.add_option("sb", "yes")
         nlp.add_option("max_iter", max_iter)
         nlp.add_option("tol", tol)
+        nlp.add_option("acceptable_tol", tol)
         if check_derivative:
             nlp.add_option("derivative_test", "second-order")
         if not verbose:

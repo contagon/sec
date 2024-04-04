@@ -1,6 +1,6 @@
 import jax.numpy as np
 import jax
-from sec.core import jitmethod
+from sec.core import jitmethod, wrap2pi
 import matplotlib.pyplot as plt
 
 
@@ -19,8 +19,8 @@ class WheelSim:
         self,
         T,
         dt,
-        std_Q=0.01,
-        std_R=0.01,
+        std_Q=0.001,
+        std_R=0.001,
         max_u=8,
         dist=0.5,
         range=2.5,
@@ -42,7 +42,7 @@ class WheelSim:
         self.key = jax.random.PRNGKey(0)
 
         self.x0 = np.array([0, 0, 0])
-        self.xg = np.array([0, 5, 5])
+        self.xg = np.array([np.pi / 4, 5, 5])
         x = np.array([1, 2.5, 4])
         self.landmarks = np.array([[i, j] for i in x for j in x])
 
@@ -89,9 +89,13 @@ class WheelSim:
 
         measure = {}
         for i in use:
-            measure[int(i)] = (
-                self.landmarks[int(i)] - x[1:3] + self.perturb(2, self.std_R)
-            )
+            theta, px, py = x
+            lx, ly = self.landmarks[int(i)]
+
+            angle = wrap2pi(np.arctan2(ly - py, lx - px) - theta)
+            r = np.sqrt((lx - px) ** 2 + (ly - py) ** 2)
+
+            measure[int(i)] = np.array([r, angle]) + self.perturb(2, self.std_R)
 
         return measure
 

@@ -2,10 +2,15 @@ from typing import Any, Callable, Sequence, Union, TypeVar
 from jaxlie.manifold import rplus, zero_tangents
 import jax
 from typing_extensions import ParamSpec
+import jax.numpy as np
 
 AxisName = Any
 P = ParamSpec("P")
 T = TypeVar("T")
+
+
+def wrap2pi(theta):
+    return (theta + np.pi) % (2 * np.pi) - np.pi
 
 
 def jitmethod(fun: Callable[P, Any]) -> Callable[P, Any]:

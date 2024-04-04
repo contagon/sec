@@ -32,7 +32,7 @@ def step(start, name):
 
 
 # Set up the simulation
-sys = WheelSim(5, 0.1, dist=0.55, params=np.array([0.4, 0.43]), plot_live=True)
+sys = WheelSim(5, 0.1, dist=0.6, params=np.array([0.4, 0.43]), plot_live=True)
 graph = core.Graph()
 vals = core.Variables()
 
@@ -111,7 +111,7 @@ graph.template = vals
 # plt.show(block=True)
 # quit()
 
-vals, _ = graph.solve(vals, verbose=True, tol=1e-1, max_iter=2000)
+vals, _ = graph.solve(vals, verbose=False, tol=1e-1, max_iter=2000)
 print("Step 0 done", vals[P(0)])
 sys.plot(0, vals)
 
@@ -150,8 +150,13 @@ for i in range(sys.N):
     if len(lm_new) > 0:
         print("New landmarks detected", lm_new)
     for lm in lm_new:
-        loc = x[1:3] + z[lm]
-        vals.add(L(lm), loc)
+        r, angle = z[lm]
+        theta, px, py = x
+
+        lx = px + r * np.cos(angle + theta)
+        ly = py + r * np.sin(angle + theta)
+
+        vals.add(L(lm), np.array([lx, ly]))
 
         for j in range(i + 2, sys.N):
             f_idx = graph.add(LandmarkAvoid([X(j), L(lm)], sys.dist))
@@ -167,7 +172,11 @@ for i in range(sys.N):
     graph.template = vals
     c_before = graph.objective(vals.to_vec())
 
-    vals_new, info = graph.solve(vals, verbose=False, max_iter=1000)
+    max_iter = 500
+    if len(lm_new) > 0:
+        max_iter = 10_000
+
+    vals_new, info = graph.solve(vals, verbose=True, max_iter=max_iter, tol=1e-1)
     print(info["status_msg"])
 
     c_after = graph.objective(vals_new.to_vec())
