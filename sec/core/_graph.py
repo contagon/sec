@@ -9,6 +9,12 @@ from ._variables import Variables, vec2var
 from ._helpers import jitmethod
 
 
+@jax.jit
+def pytrees_stack(pytrees, axis=0):
+    results = jax.tree_map(lambda *values: np.stack(values, axis=axis), *pytrees)
+    return results
+
+
 class Graph:
     def __init__(self, factors: list[Factor] = None):
         self.factors = {}
@@ -123,14 +129,8 @@ class Graph:
         Step = namedtuple("Step", ["factors", "values", "idx"])
         values = vec2var(x, self.template)
 
-        def pytrees_stack(pytrees, axis=0):
-            results = jax.tree_map(
-                lambda *values: np.stack(values, axis=axis), *pytrees
-            )
-            return results
-
         arrays = []
-        for factor_type, factors in self.factors.items():
+        for factors in self.factors.values():
             factors_parsed = [f for f in factors if f is not None]
             if len(factors_parsed) == 0:
                 continue

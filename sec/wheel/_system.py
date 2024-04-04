@@ -43,9 +43,8 @@ class WheelSim:
 
         self.x0 = np.array([0, 0, 0])
         self.xg = np.array([0, 5, 5])
-        x = np.linspace(self.x0[1] + 1, self.xg[1] - 1, 3)
-        y = np.linspace(self.x0[2] + 1, self.xg[2] - 1, 3)
-        self.landmarks = np.array([[i, j] for i in x for j in y])
+        x = np.array([1, 2.5, 4])
+        self.landmarks = np.array([[i, j] for i in x for j in x])
 
         self.plot_started = False
         self.plot_live = plot_live
