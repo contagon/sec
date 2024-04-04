@@ -78,7 +78,7 @@ for i, x in enumerate(xs[1:]):
     vals.add(X(i + 1), x + sys.perturb(3))
     vals.add(U(i), sys.perturb(2))
 
-graph.add(FinalCost([X(sys.N)], sys.xg, 100 * np.eye(3)))
+graph.add(FinalCost([X(sys.N)], sys.xg, 1000 * np.eye(3)))
 graph.template = vals
 
 # t = step(start, "Setup")
@@ -176,12 +176,12 @@ for i in range(sys.N):
     if len(lm_new) > 0:
         max_iter = 10_000
 
-    vals_new, info = graph.solve(vals, verbose=True, max_iter=max_iter, tol=1e-1)
+    vals_new, info = graph.solve(vals, verbose=False, max_iter=max_iter, tol=1e-1)
     print(info["status_msg"])
 
     c_after = graph.objective(vals_new.to_vec())
 
-    print(f"Step {i+1} done", vals[P(0)], c_before - c_after)
+    print(f"Step {i+1} done", vals[P(0)], vals[X(sys.N)], c_before - c_after)
     if c_before - c_after > -1e4:
         print("Accepted")
         vals = vals_new
