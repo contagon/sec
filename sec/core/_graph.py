@@ -11,12 +11,6 @@ from ._helpers import jitmethod
 import sec.operators as op
 
 
-@jax.jit
-def pytrees_stack(pytrees, axis=0):
-    results = jax.tree_map(lambda *values: np.stack(values, axis=axis), *pytrees)
-    return results
-
-
 class Graph:
     def __init__(self, factors: list[Factor] = None):
         self.factors = {}
@@ -168,28 +162,28 @@ class Graph:
             factors_parsed = [f for f in factors if f is not None]
             if len(factors_parsed) == 0:
                 continue
-            stacked_f = pytrees_stack(factors_parsed)
+            stacked_f = op.stack(factors_parsed)
 
             stacked_v = jax.tree_map(
                 lambda f: self.x0[f.keys],
                 factors_parsed,
                 is_leaf=lambda n: isinstance(n, Factor),
             )
-            stacked_v = pytrees_stack(stacked_v)
+            stacked_v = op.stack(stacked_v)
 
             stacked_d = jax.tree_map(
                 lambda f: delta[f.keys],
                 factors_parsed,
                 is_leaf=lambda n: isinstance(n, Factor),
             )
-            stacked_d = pytrees_stack(stacked_d)
+            stacked_d = op.stack(stacked_d)
 
             stacked_i = jax.tree_map(
                 lambda f: self.x0.start_idx(f.keys),
                 factors_parsed,
                 is_leaf=lambda n: isinstance(n, Factor),
             )
-            stacked_i = pytrees_stack(stacked_i)
+            stacked_i = op.stack(stacked_i)
 
             s = Step(stacked_f, stacked_v, stacked_d, stacked_i)
             init, arr = jax.lax.scan(func, init, s)

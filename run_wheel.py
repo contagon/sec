@@ -13,8 +13,10 @@ from sec.wheel import (
     BoundedConstraint,
     BoundedConstraintLambda,
 )
+import sec.operators as op
 import jax
 import jax.numpy as np
+from jaxlie import SE2
 import matplotlib.pyplot as plt
 from tqdm import trange
 from time import time
@@ -45,7 +47,6 @@ idx_fix_params = graph.add(FixConstraint([P(0)], vals[P(0)]))
 indices = [[] for i in range(sys.N)]
 sum_vals = lambda vals: np.sum(vals[0])
 
-x = sys.x0.copy()
 for i in range(sys.N):
     f_idx = graph.add(
         System(
@@ -73,53 +74,25 @@ for i in range(sys.N):
     )
     indices[i].append(f_idx)
 
-xs = np.linspace(sys.x0, sys.xg, sys.N + 1)
+xs = np.linspace(sys.x0.parameters(), sys.xg.parameters(), sys.N + 1)
 for i, x in enumerate(xs[1:]):
-    vals.add(X(i + 1), x + sys.perturb(3))
+    vals.add(X(i + 1), op.add(SE2(x), sys.perturb(3)))
     vals.add(U(i), sys.perturb(2))
 
 graph.add(FinalCost([X(sys.N)], sys.xg, 1000 * np.eye(3)))
-graph.template = vals
-
-# t = step(start, "Setup")
-# graph.objective(vals.to_vec())
-# t = step(t, "Objective")
-# graph.gradient(vals.to_vec())
-# t = step(t, "Gradient")
-# graph.constraints(vals.to_vec())
-# t = step(t, "Constraints")
-# graph.constraints_bounds()
-# t = step(t, "constraints_bounds")
-# graph.jacobian(vals.to_vec())
-# t = step(t, "Jacobian")
-# graph.jacobianstructure()
-# t = step(t, "Jacobian Structure")
-# print()
-# graph.objective(vals.to_vec())
-# t = step(t, "Objective")
-# graph.gradient(vals.to_vec())
-# t = step(t, "Gradient")
-# graph.constraints(vals.to_vec())
-# t = step(t, "Constraints")
-# graph.constraints_bounds()
-# t = step(t, "constraints_bounds")
-# graph.jacobian(vals.to_vec())
-# t = step(t, "Jacobian")
-# graph.jacobianstructure()
-# t = step(t, "Jacobian Structure")
-
-# plt.show(block=True)
-# quit()
 
 vals, _ = graph.solve(vals, verbose=False, tol=1e-1, max_iter=2000)
 print("Step 0 done", vals[P(0)])
 sys.plot(0, vals)
 
+# plt.show(block=True)
+# quit()
+
 graph.remove(idx_fix_params)
 graph.add(BoundedConstraint([P(0)], np.array([0.2, 0.2]), np.array([0.6, 0.6])))
 
 # ------------------------- Iterate through the simulation ------------------------- #
-x = sys.x0.copy()
+x = op.copy(sys.x0)
 gt = core.Variables({X(0): sys.x0})
 lm_seen = set()
 for i in range(sys.N):
@@ -127,7 +100,7 @@ for i in range(sys.N):
     u = vals[U(i)]
     x = sys.dynamics(sys.params, x, u)
     z = sys.measure(x)  # measure at Xi+1
-    gt[X(i + 1)] = x.copy()
+    gt[X(i + 1)] = op.copy(x)
 
     # Remove old factors/values
     for idx in indices[i]:
@@ -149,12 +122,14 @@ for i in range(sys.N):
     lm_seen.update(lm_new)
     if len(lm_new) > 0:
         print("New landmarks detected", lm_new)
+    x_est = vals[X(i + 1)]
     for lm in lm_new:
-        r, angle = z[lm]
-        theta, px, py = x
+        px, py = x_est.translation()
+        theta = x_est.rotation().as_radians()
+        r, beta = z[lm]
 
-        lx = px + r * np.cos(angle + theta)
-        ly = py + r * np.sin(angle + theta)
+        lx = px + r * np.cos(theta + beta)
+        ly = py + r * np.sin(theta + beta)
 
         vals.add(L(lm), np.array([lx, ly]))
 
@@ -178,8 +153,6 @@ for i in range(sys.N):
     vals_new, info = graph.solve(vals, verbose=False, max_iter=max_iter, tol=1e-1)
     print(info["status_msg"])
 
-    # TODO: Broke something with this...
-    # Probably isn't recompiling the jit
     c_after = graph.objective(x0=vals_new)
 
     accept = False
