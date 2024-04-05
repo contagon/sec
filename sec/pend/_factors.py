@@ -1,5 +1,5 @@
 from .. import core
-from ..core import jitclass
+from sec.helpers import jitclass
 
 from overrides import overrides
 import jax.numpy as np

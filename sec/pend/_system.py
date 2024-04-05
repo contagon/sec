@@ -1,6 +1,6 @@
 import jax.numpy as np
 import jax
-from sec.core import jitmethod
+from sec.helpers import jitmethod
 import matplotlib.pyplot as plt
 
 

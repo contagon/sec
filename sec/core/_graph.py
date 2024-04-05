@@ -7,7 +7,7 @@ import cyipopt
 
 from ._factor import Factor
 from ._variables import Variables, vec2var
-from ._helpers import jitmethod
+from ..helpers import jitmethod
 import sec.operators as op
 
 

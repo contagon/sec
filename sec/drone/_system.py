@@ -1,20 +1,25 @@
 import jax.numpy as np
 import jax
-from sec.helpers import jitmethod, wrap2pi
+from sec.helpers import jitmethod, wrap2pi, jitclass
 import matplotlib.pyplot as plt
+import jax_dataclasses as jdc
+from jaxlie import SO3
+import sec.operators as op
+from sec.operators import DroneState
 
 
-@jitmethod
+# @jitmethod
 def rk4(dynamics: callable, params: jax.Array, x: jax.Array, u: jax.Array, dt: float):
     # vanilla RK4
     k1 = dt * dynamics(params, x, u)
-    k2 = dt * dynamics(params, x + k1 / 2, u)
-    k3 = dt * dynamics(params, x + k2 / 2, u)
-    k4 = dt * dynamics(params, x + k3, u)
-    return x + (1 / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+    k2 = dt * dynamics(params, op.add(x, k1 / 2), u)
+    k3 = dt * dynamics(params, op.add(x, k2 / 2), u)
+    k4 = dt * dynamics(params, op.add(x, k3), u)
+    delta = (k1 + 2 * k2 + 2 * k3 + k4) / 6
+    return op.add(x, delta)
 
 
-class WheelSim:
+class DroneSim:
     def __init__(
         self,
         T,
@@ -24,7 +29,7 @@ class WheelSim:
         max_u=8,
         dist=0.5,
         range=2.5,
-        params=np.array([0.4, 0.4]),  # [r_l, r_r]
+        params=np.array([0.5, 0.175]),  # [r_l, r_r]
         baseline=1,
         plot_live=False,
         filename=None,
@@ -41,10 +46,12 @@ class WheelSim:
         self.range = range
         self.key = jax.random.PRNGKey(0)
 
-        self.x0 = np.array([0, 0, 0])
-        self.xg = np.array([np.pi / 4, 5, 5])
+        self.x0 = DroneState.identity()
+        self.xg = DroneState(
+            SO3.from_z_radians(np.pi / 4), np.zeros(3), np.array([5, 5, 5]), np.zeros(3)
+        )
         x = np.array([1, 2.5, 4])
-        self.landmarks = np.array([[i, j] for i in x for j in x])
+        self.landmarks = np.array([[i, j, k] for i in x for j in x for k in x])
 
         self.plot_started = False
         self.plot_live = plot_live
@@ -60,23 +67,36 @@ class WheelSim:
         return jax.random.normal(self.getkey(), size) * std
 
     @staticmethod
-    @jax.jit
+    # @jax.jit
     def _cont_system(params, state, u):
-        r_l, r_r = params
-        w_l, w_r = u
-        baseline = 1
+        mass, L = params
+        J = np.diag(np.array([0.0023, 0.0023, 0.0040]))
+        w1, w2, w3, w4 = u
+        g = np.array([0, 0, -9.81])
+        kf = 1.0
+        km = 0.0245
 
-        w = (r_r * w_r - r_l * w_l) / baseline
-        v = (r_r * w_r + r_l * w_l) / 2
+        f1 = w1 * kf
+        f2 = w2 * kf
+        f3 = w3 * kf
+        f4 = w4 * kf
+        F = np.array([0, 0, f1 + f2 + f3 + f4])
+        f = mass * g + state.q.apply(F)
 
-        theta, x, y = state
-        theta_dot = w
-        xdot = v * np.cos(theta)
-        ydot = v * np.sin(theta)
+        m1 = km * w1
+        m2 = km * w2
+        m3 = km * w3
+        m4 = km * w4
+        tau = np.array([L * (-f2 + f4), L * (-f1 + f3), m1 - m2 + m3 - m4])
 
-        return np.array([theta_dot, xdot, ydot])
+        w = state.w
+        wdot = np.linalg.inv(J) @ (tau - np.cross(w, J @ w))
+        v = state.v
+        vdot = f / mass
 
-    @jitmethod
+        return np.concatenate([w, wdot, v, vdot])
+
+    # @jitmethod
     def dynamics(self, params, x, u):
         return rk4(self._cont_system, params, x, u, self.dt)
 
@@ -84,6 +104,7 @@ class WheelSim:
         return self.dynamics(self.params, x, u) + self.perturb(3, self.std_Q)
 
     def measure(self, x):
+        # TODO
         dist = np.linalg.norm(self.landmarks - x[1:3], axis=1)
         use = np.where(dist < self.range)[0]
 
@@ -100,6 +121,7 @@ class WheelSim:
         return measure
 
     def plot(self, idx, vals, gt=None):
+        # TODO
         import matplotlib.pyplot as plt
 
         if not self.plot_started:

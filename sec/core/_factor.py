@@ -2,12 +2,12 @@ import jax.numpy as np
 import jax
 from typing import Optional
 import jaxlie
-from ._helpers import jitclass
+from ..helpers import jitclass
 from ._variables import Variables, Variable
 import jax_dataclasses as jdc
 from functools import cached_property
 import sec.operators as op
-from ._helpers import jacfwd, jacrev, grad
+from ..helpers import jacfwd, jacrev, grad
 
 
 @jitclass
