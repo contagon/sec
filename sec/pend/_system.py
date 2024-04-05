@@ -19,8 +19,8 @@ class PendulumSim:
         self,
         T,
         dt,
-        std_Q=0.01,
-        std_R=0.01,
+        std_Q=0.005,
+        std_R=0.005,
         max_u=3,
         params=np.array([1, 0.5]),  # [m, l]
         plot_live=False,

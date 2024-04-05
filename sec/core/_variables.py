@@ -84,7 +84,7 @@ class Variables:
         new_vals = self.vals.copy()
         idx = 0
         for key, val in self.vals.items():
-            delta = other[idx : idx + val.dim]
+            delta = other[idx : idx + get_dim(val)]
             new_vals[key] = add(val, delta)
             idx += get_dim(val)
 
@@ -129,15 +129,14 @@ class Variables:
 
         return {k: np.vstack(v) for k, v in out.items()}
 
+    def _tree_flatten(self):
+        return jax.tree_util.tree_flatten(self.vals)
 
-#     def _tree_flatten(self):
-#         return jax.tree_util.tree_flatten(self.vals)
-
-#     @classmethod
-#     def _tree_unflatten(cls, aux_data, children):
-#         return cls(jax.tree_util.tree_unflatten(aux_data, children))
+    @classmethod
+    def _tree_unflatten(cls, aux_data, children):
+        return cls(jax.tree_util.tree_unflatten(aux_data, children))
 
 
-# jax.tree_util.register_pytree_node(
-#     Variables, Variables._tree_flatten, Variables._tree_unflatten
-# )
+jax.tree_util.register_pytree_node(
+    Variables, Variables._tree_flatten, Variables._tree_unflatten
+)

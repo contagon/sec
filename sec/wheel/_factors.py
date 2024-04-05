@@ -4,6 +4,8 @@ from sec.core import jitclass, wrap2pi
 from overrides import overrides
 import jax.numpy as np
 import jax_dataclasses as jdc
+from typing import Optional
+from sec.core import Variable
 
 
 # ------------------------- Controls Factors ------------------------- #
@@ -81,8 +83,10 @@ class System(core.Factor):
         return np.zeros(3), np.zeros(3)
 
     @overrides
-    def constraints_jac(self, values: list[core.Variable]):
-        jac = super().constraints_jac(values)
+    def constraints_jac(
+        self, values: list[core.Variable], delta: Optional[list[Variable]] = None
+    ):
+        jac = super().constraints_jac(values, delta)
         jac[0] = np.zeros((3, 2))
         return jac
 

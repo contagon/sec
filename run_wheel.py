@@ -169,8 +169,7 @@ for i in range(sys.N):
     if i < 1:
         continue
 
-    graph.template = vals
-    c_before = graph.objective(vals.to_vec())
+    c_before = graph.objective(x0=vals)
 
     max_iter = 500
     if len(lm_new) > 0:
@@ -179,13 +178,22 @@ for i in range(sys.N):
     vals_new, info = graph.solve(vals, verbose=False, max_iter=max_iter, tol=1e-1)
     print(info["status_msg"])
 
-    c_after = graph.objective(vals_new.to_vec())
+    # TODO: Broke something with this...
+    # Probably isn't recompiling the jit
+    c_after = graph.objective(x0=vals_new)
 
-    print(f"Step {i+1} done", vals[P(0)], vals[X(sys.N)], c_before - c_after)
-    if c_before - c_after > -1e4:
-        print("Accepted")
+    accept = False
+    diff = c_before - c_after
+    if 1e6 > diff and diff > -1e4:
+        accept = True
         vals = vals_new
 
+    print(
+        f"Step {i+1} done, accepted: {accept}",
+        vals[P(0)],
+        vals[X(sys.N)],
+        c_before - c_after,
+    )
     sys.plot(i + 1, vals, gt)
 
 plt.show(block=True)

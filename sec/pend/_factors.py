@@ -64,8 +64,10 @@ class System(core.Factor):
         return np.zeros(2), np.zeros(2)
 
     @overrides
-    def constraints_jac(self, values: list[core.Variable]):
-        jac = super().constraints_jac(values)
+    def constraints_jac(
+        self, values: list[core.Variable], delta: list[core.Variable] = None
+    ):
+        jac = super().constraints_jac(values, delta)
         jac[0] = np.zeros((2, 2))
         return jac
 

@@ -20,7 +20,7 @@ np.set_printoptions(precision=4)
 
 
 # Set up the simulation
-sys = PendulumSim(4, 0.1, max_u=1, plot_live=True)
+sys = PendulumSim(5, 0.1, max_u=1.5, plot_live=True)
 graph = core.Graph()
 vals = core.Variables()
 
@@ -55,14 +55,14 @@ for i, x in enumerate(xs[1:]):
     vals.add(sym.X(i + 1), x + sys.perturb(2))
     vals.add(sym.U(i), sys.perturb(1))
 
-graph.add(FinalCost([sym.X(sys.N)], sys.xg, 100 * np.eye(2)))
+graph.add(FinalCost([sym.X(sys.N)], sys.xg, 1000 * np.eye(2)))
 
 vals, _ = graph.solve(vals, verbose=True, max_iter=1000, check_derivative=False)
 print("Step 0 done", vals[sym.P(0)])
 sys.plot(0, vals)
 
 graph.remove(idx_fix_params)
-graph.add(BoundedConstraint([sym.P(0)], np.array([0.8, 0.3]), np.array([1.4, 0.9])))
+graph.add(BoundedConstraint([sym.P(0)], np.array([0.9, 0.4]), np.array([1.1, 0.6])))
 
 # ------------------------- Iterate through the simulation ------------------------- #
 x = sys.x0.copy()
@@ -94,18 +94,25 @@ for i in range(sys.N):
     if i < 3:
         continue
 
-    graph.template = vals
-    c_before = graph.objective(vals.to_vec())
+    c_before = graph.objective(x0=vals)
 
-    vals_new, info = graph.solve(vals, verbose=False, max_iter=500)
+    vals_new, info = graph.solve(vals, verbose=False, max_iter=500, tol=1e-2)
     print(info["status_msg"])
 
-    c_after = graph.objective(vals_new.to_vec())
+    c_after = graph.objective(x0=vals_new)
 
-    print(f"Step {i+1} done", c_before, c_after, c_before - c_after)
-    sys.plot(i + 1, vals, gt)
-    if c_before - c_after > -1e3:
-        print("Accepted", vals[sym.P(0)])
+    accept = False
+    diff = c_before - c_after
+    if 1e6 > diff and diff > -1e4:
+        accept = True
         vals = vals_new
+
+    print(
+        f"Step {i+1} done, accepted: {accept}",
+        vals[sym.P(0)],
+        vals[sym.X(sys.N)],
+        c_before - c_after,
+    )
+    sys.plot(i + 1, vals, gt)
 
 plt.show(block=True)
