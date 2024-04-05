@@ -2,8 +2,6 @@ import jax.numpy as np
 import jax
 from sec.core import jitmethod, wrap2pi
 import matplotlib.pyplot as plt
-from jaxlie import SE2
-import sec.operators as op
 
 
 @jitmethod
@@ -22,7 +20,7 @@ class WheelSim:
         T,
         dt,
         std_Q=0.005,
-        std_R=0.01,
+        std_R=0.005,
         max_u=8,
         dist=0.5,
         range=2.5,
@@ -43,8 +41,8 @@ class WheelSim:
         self.range = range
         self.key = jax.random.PRNGKey(0)
 
-        self.x0 = SE2.from_xy_theta(0, 0, 0)
-        self.xg = SE2.from_xy_theta(5, 5, np.pi / 4)
+        self.x0 = np.array([0, 0, 0])
+        self.xg = np.array([np.pi / 4, 5, 5])
         x = np.array([1, 2.5, 4])
         self.landmarks = np.array([[i, j] for i in x for j in x])
 
@@ -61,8 +59,9 @@ class WheelSim:
             size = (size,)
         return jax.random.normal(self.getkey(), size) * std
 
-    @jitmethod
-    def dynamics(self, params, x, u):
+    @staticmethod
+    @jax.jit
+    def _cont_system(params, state, u):
         r_l, r_r = params
         w_l, w_r = u
         baseline = 1
@@ -70,20 +69,27 @@ class WheelSim:
         w = (r_r * w_r - r_l * w_l) / baseline
         v = (r_r * w_r + r_l * w_l) / 2
 
-        vv = np.array([v, 0, w])
-        return op.add(x, vv * self.dt)
+        theta, x, y = state
+        theta_dot = w
+        xdot = v * np.cos(theta)
+        ydot = v * np.sin(theta)
+
+        return np.array([theta_dot, xdot, ydot])
+
+    @jitmethod
+    def dynamics(self, params, x, u):
+        return rk4(self._cont_system, params, x, u, self.dt)
 
     def step(self, x, u):
-        return op.add(self.dynamics(self.params, x, u), self.perturb(3, self.std_Q))
+        return self.dynamics(self.params, x, u) + self.perturb(3, self.std_Q)
 
     def measure(self, x):
-        dist = np.linalg.norm(self.landmarks - x.translation(), axis=1)
+        dist = np.linalg.norm(self.landmarks - x[1:3], axis=1)
         use = np.where(dist < self.range)[0]
 
         measure = {}
         for i in use:
-            px, py = x.translation()
-            theta = x.rotation().as_radians()
+            theta, px, py = x
             lx, ly = self.landmarks[int(i)]
 
             angle = wrap2pi(np.arctan2(ly - py, lx - px) - theta)
@@ -132,11 +138,7 @@ class WheelSim:
                 )
 
                 self.idx_dist = plt.Circle(
-                    self.x0.translation(),
-                    self.range,
-                    fill=False,
-                    color=color_gt,
-                    alpha=0.3,
+                    self.x0, self.range, fill=False, color=color_gt, alpha=0.3
                 )
                 self.ax[0].add_artist(self.idx_dist)
 
@@ -147,12 +149,8 @@ class WheelSim:
                 )
                 self.ax[0].add_artist(self.circle_est[-1])
 
-            self.ax[0].set_xlim(
-                [self.x0.translation()[0] - 1, self.xg.translation()[0] + 1]
-            )
-            self.ax[0].set_ylim(
-                [self.x0.translation()[1] - 1, self.xg.translation()[1] + 1]
-            )
+            self.ax[0].set_xlim([self.x0[1] - 1, self.xg[1] + 1])
+            self.ax[0].set_ylim([self.x0[2] - 1, self.xg[2] + 1])
             self.ax[0].set_aspect("equal")
 
             if self.plot_live:
@@ -162,9 +160,9 @@ class WheelSim:
 
         s = vals.stacked()
 
-        X = s["X"].translation()
-        self.traj_est.set_data(X[: idx + 1, 0], X[: idx + 1, 1])
-        self.traj_fut.set_data(X[idx:, 0], X[idx:, 1])
+        X = s["X"]
+        self.traj_est.set_data(X[: idx + 1, 1], X[: idx + 1, 2])
+        self.traj_fut.set_data(X[idx:, 1], X[idx:, 2])
 
         if "L" in s:
             L = s["L"]
@@ -172,11 +170,11 @@ class WheelSim:
             for i, l in enumerate(L):
                 self.circle_est[i].set(center=l, alpha=0.5)
 
-            self.idx_dist.set(center=X[idx])
+            self.idx_dist.set(center=X[idx, 1:3])
 
         if gt is not None:
-            X = gt.stacked()["X"].translation()
-            self.traj_gt.set_data(X[:, 0], X[:, 1])
+            X = gt.stacked()["X"]
+            self.traj_gt.set_data(X[:, 1], X[:, 2])
 
         plt.draw()
         if self.plot_live:

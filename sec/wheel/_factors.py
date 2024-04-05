@@ -6,7 +6,6 @@ import jax.numpy as np
 import jax_dataclasses as jdc
 from typing import Optional
 from sec.core import Variable
-import sec.operators as op
 
 
 # ------------------------- Controls Factors ------------------------- #
@@ -17,12 +16,12 @@ class FixConstraint(core.Factor):
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
-        return op.sub(values[0], self.value)
+        return values[0] - self.value
 
     @property
     @overrides
     def constraints_bounds(self) -> tuple[np.ndarray, np.ndarray]:
-        d = op.dim(self.value)
+        d = self.value.shape[0]
         return np.zeros(d), np.zeros(d)
 
 
@@ -34,7 +33,7 @@ class BoundedConstraint(core.Factor):
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
-        return op.sub(values[0], op.eye(values[0]))
+        return values[0]
 
     @property
     @overrides
@@ -70,13 +69,13 @@ class System(core.Factor):
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
         _, x, _, u = values
-        x_diff = op.sub(x, self.xg)
+        x_diff = x - self.xg
         return x_diff.T @ self.Q @ x_diff / 2 + u.T @ self.R @ u / 2
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
         p, x_curr, x_next, u = values
-        return op.sub(x_next, self.dyn(p, x_curr, u))
+        return x_next - self.dyn(p, x_curr, u)
 
     @property
     @overrides
@@ -100,7 +99,7 @@ class FinalCost(core.Factor):
 
     @overrides
     def cost(self, values: list[core.Variable]) -> float:
-        x_diff = op.sub(values[0], self.xg)
+        x_diff = values[0] - self.xg
         return x_diff.T @ self.Qf @ x_diff / 2
 
 
@@ -113,7 +112,7 @@ class LandmarkAvoid(core.Factor):
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
         # TODO: Use tangent line for distance from circle?
         x, l = values
-        d = x.translation() - l
+        d = x[1:] - l
         return np.array([d.T @ d])
 
     @property
@@ -132,11 +131,27 @@ class PriorFactor(core.Factor):
     @overrides
     def residual(self, values: list[core.Variable]) -> np.ndarray:
         x = values[0]
-        return op.sub(x, self.mu)
+        return x - self.mu
 
     @property
     def residual_dim(self) -> int:
         return self.mu.shape[0]
+
+
+@jitclass
+@jdc.pytree_dataclass
+class EncoderMeasure(core.Factor):
+    mm: np.ndarray
+    W: np.ndarray
+
+    @overrides
+    def residual(self, values: list[core.Variable]) -> np.ndarray:
+        x = values[0]
+        return x[0] - self.mm
+
+    @property
+    def residual_dim(self) -> int:
+        return self.mm.shape[0]
 
 
 @jitclass
@@ -153,7 +168,7 @@ class PastDynamics(core.Factor):
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
         params, x, x_next, u, w = values
-        return op.sub(x_next, self.dyn(params, x, u)) + w
+        return x_next - self.dyn(params, x, u) + w
 
     @property
     @overrides
@@ -171,8 +186,7 @@ class LandmarkMeasure(core.Factor):
     def residual(self, values: list[core.Variable]) -> np.ndarray:
         x, l = values
 
-        px, py = x.translation()
-        theta = x.rotation().as_radians()
+        theta, px, py = x
         lx, ly = l
 
         angle = wrap2pi(np.arctan2(ly - py, lx - px) - theta)

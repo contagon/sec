@@ -3,6 +3,7 @@ from ._factors import (
     FixConstraint,
     System,
     PriorFactor,
+    EncoderMeasure,
     PastDynamics,
     FinalCost,
     BoundedConstraint,
