@@ -56,7 +56,9 @@ class DroneState:
         return np.concatenate([self.q.log(), self.w, self.p, self.v])
 
     def copy(self):
-        return DroneState(self.q.copy(), self.w.copy(), self.p.copy(), self.v.copy())
+        return DroneState(
+            jaxlie.SO3(self.q.wxyz), self.w.copy(), self.p.copy(), self.v.copy()
+        )
 
 
 def dim(val: Variable) -> int:

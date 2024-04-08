@@ -6,9 +6,10 @@ import jax_dataclasses as jdc
 from jaxlie import SO3
 import sec.operators as op
 from sec.operators import DroneState
+import mpl_toolkits.mplot3d.axes3d as Axes3D
 
 
-# @jitmethod
+@jitmethod
 def rk4(dynamics: callable, params: jax.Array, x: jax.Array, u: jax.Array, dt: float):
     # vanilla RK4
     k1 = dt * dynamics(params, x, u)
@@ -17,6 +18,15 @@ def rk4(dynamics: callable, params: jax.Array, x: jax.Array, u: jax.Array, dt: f
     k4 = dt * dynamics(params, op.add(x, k3), u)
     delta = (k1 + 2 * k2 + 2 * k3 + k4) / 6
     return op.add(x, delta)
+
+
+def sphere_pts(c, r):
+    u, v = np.mgrid[0 : 2 * np.pi : 50j, 0 : np.pi : 50j]
+    x = r * np.cos(u) * np.sin(v)
+    y = r * np.sin(u) * np.sin(v)
+    z = r * np.cos(v)
+
+    return c[0] + x, c[1] + y, c[2] + z
 
 
 class DroneSim:
@@ -29,7 +39,7 @@ class DroneSim:
         max_u=8,
         dist=0.5,
         range=2.5,
-        params=np.array([0.5, 0.175]),  # [r_l, r_r]
+        params=np.array([0.5, 0.175]),  # [mass, L]
         baseline=1,
         plot_live=False,
         filename=None,
@@ -67,7 +77,7 @@ class DroneSim:
         return jax.random.normal(self.getkey(), size) * std
 
     @staticmethod
-    # @jax.jit
+    @jax.jit
     def _cont_system(params, state, u):
         mass, L = params
         J = np.diag(np.array([0.0023, 0.0023, 0.0040]))
@@ -96,7 +106,7 @@ class DroneSim:
 
         return np.concatenate([w, wdot, v, vdot])
 
-    # @jitmethod
+    @jitmethod
     def dynamics(self, params, x, u):
         return rk4(self._cont_system, params, x, u, self.dt)
 
@@ -104,29 +114,24 @@ class DroneSim:
         return self.dynamics(self.params, x, u) + self.perturb(3, self.std_Q)
 
     def measure(self, x):
-        # TODO
-        dist = np.linalg.norm(self.landmarks - x[1:3], axis=1)
+        dist = np.linalg.norm(self.landmarks - x.p, axis=1)
         use = np.where(dist < self.range)[0]
+        R = x.q.as_matrix()
 
         measure = {}
         for i in use:
-            theta, px, py = x
-            lx, ly = self.landmarks[int(i)]
-
-            angle = wrap2pi(np.arctan2(ly - py, lx - px) - theta)
-            r = np.sqrt((lx - px) ** 2 + (ly - py) ** 2)
-
-            measure[int(i)] = np.array([r, angle]) + self.perturb(2, self.std_R)
+            mm = R @ (self.landmarks[int(i)] - x.p)
+            measure[int(i)] = mm + self.perturb(3, self.std_R)
 
         return measure
 
     def plot(self, idx, vals, gt=None):
-        # TODO
         import matplotlib.pyplot as plt
 
         if not self.plot_started:
             self.plot_started = True
-            self.fig, self.ax = plt.subplots(1, 1)
+            self.fig = plt.figure()
+            self.ax = self.fig.add_subplot(projection="3d")
             self.ax = [self.ax]
 
             color_gt = "k"
@@ -136,43 +141,41 @@ class DroneSim:
             (self.traj_gt,) = self.ax[0].plot(
                 [],
                 [],
+                [],
                 c=color_gt,
                 marker="o",
-                label="Estimate",
                 ms=3,
             )
             (self.traj_est,) = self.ax[0].plot(
-                [],
-                [],
-                c=color_est,
-                marker="o",
-                label="Estimate",
-                ms=3,
+                [], [], [], c=color_est, marker="o", ms=3
             )
             (self.traj_fut,) = self.ax[0].plot(
-                [], [], c=color_fut, marker="o", label="Plan", ms=3
+                [], [], [], c=color_fut, marker="o", ms=3
             )
 
-            if self.landmarks.size > 0:
-                self.lm_est = self.ax[0].scatter([], [], c=color_est)
-                self.lm_true = self.ax[0].scatter(
-                    self.landmarks[:, 0], self.landmarks[:, 1], c=color_gt, alpha=0.5
-                )
+            (self.drone1,) = self.ax[0].plot([], [], [], c=color_gt, marker="o", ms=3)
+            (self.drone2,) = self.ax[0].plot([], [], [], c=color_gt, marker="o", ms=3)
 
-                self.idx_dist = plt.Circle(
-                    self.x0, self.range, fill=False, color=color_gt, alpha=0.3
+            if self.landmarks.size > 0:
+                self.lm_est = self.ax[0].scatter([], [], [], c=color_est, alpha=1.0)
+                self.lm_true = self.ax[0].scatter(
+                    self.landmarks[:, 0],
+                    self.landmarks[:, 1],
+                    self.landmarks[:, 2],
+                    c=color_gt,
+                    alpha=0.5,
                 )
-                self.ax[0].add_artist(self.idx_dist)
 
             self.circle_est = []
             for l in self.landmarks:
-                self.circle_est.append(
-                    plt.Circle(l, self.dist, fill=False, color=color_est, alpha=0.0)
+                surf = self.ax[0].plot_surface(
+                    *sphere_pts(l, self.dist), color=color_est, alpha=0.0
                 )
-                self.ax[0].add_artist(self.circle_est[-1])
+                self.circle_est.append(surf)
 
-            self.ax[0].set_xlim([self.x0[1] - 1, self.xg[1] + 1])
-            self.ax[0].set_ylim([self.x0[2] - 1, self.xg[2] + 1])
+            self.ax[0].set_xlim([self.x0.p[0] - 1, self.xg.p[0] + 1])
+            self.ax[0].set_ylim([self.x0.p[1] - 1, self.xg.p[1] + 1])
+            self.ax[0].set_zlim([self.x0.p[2] - 1, self.xg.p[2] + 1])
             self.ax[0].set_aspect("equal")
 
             if self.plot_live:
@@ -182,21 +185,36 @@ class DroneSim:
 
         s = vals.stacked()
 
+        # trajectory
         X = s["X"]
-        self.traj_est.set_data(X[: idx + 1, 1], X[: idx + 1, 2])
-        self.traj_fut.set_data(X[idx:, 1], X[idx:, 2])
+        self.traj_est.set_data_3d(
+            X.p[: idx + 1, 0], X.p[: idx + 1, 1], X.p[: idx + 1, 2]
+        )
+        self.traj_fut.set_data_3d(X.p[idx:, 0], X.p[idx:, 1], X.p[idx:, 2])
 
+        # Drone
+        R = SO3(X.q.wxyz[idx]).as_matrix()
+        t = X.p[idx]
+        L = s["P"][0, 1]
+        points = np.array(
+            [[-L, 0, 0], [L, 0, 0], [0, 0, 0], [0, -L, 0], [0, L, 0], [0, 0, 0]]
+        )
+        points = points @ R.T + t
+        self.drone1.set_data_3d(points[:3, 0], points[:3, 1], points[:3, 2])
+        self.drone2.set_data_3d(points[3:, 0], points[3:, 1], points[3:, 2])
+
+        # Landmarks
         if "L" in s:
             L = s["L"]
-            self.lm_est.set_offsets(L)
-            for i, l in enumerate(L):
-                self.circle_est[i].set(center=l, alpha=0.5)
+            self.lm_est._offsets3d = (L[:, 0], L[:, 1], L[:, 2])
+            # for i, l in enumerate(L):
+            #     self.circle_est[i].set_verts(sphere_pts(l, self.dist))
+            #     self.circle_est[i].set_alpha(0.5)
 
-            self.idx_dist.set(center=X[idx, 1:3])
-
+        # GT
         if gt is not None:
             X = gt.stacked()["X"]
-            self.traj_gt.set_data(X[:, 1], X[:, 2])
+            self.traj_gt.set_data_3d(X.p[:, 0], X.p[:, 1], X.p[:, 2])
 
         plt.draw()
         if self.plot_live:

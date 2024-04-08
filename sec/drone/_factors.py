@@ -111,9 +111,8 @@ class LandmarkAvoid(core.Factor):
 
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
-        # TODO: Use tangent line for distance from circle?
         x, l = values
-        d = x[1:] - l
+        d = x.p - l
         return np.array([d.T @ d])
 
     @property
@@ -132,11 +131,11 @@ class PriorFactor(core.Factor):
     @overrides
     def residual(self, values: list[core.Variable]) -> np.ndarray:
         x = values[0]
-        return x - self.mu
+        return op.sub(x, self.mu)
 
     @property
     def residual_dim(self) -> int:
-        return self.mu.shape[0]
+        return op.dim(self.mu)
 
 
 @jitclass
@@ -153,12 +152,12 @@ class PastDynamics(core.Factor):
     @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
         params, x, x_next, u, w = values
-        return x_next - self.dyn(params, x, u) + w
+        return op.sub(x_next, self.dyn(params, x, u)) + w
 
     @property
     @overrides
     def constraints_bounds(self) -> tuple[np.ndarray, np.ndarray]:
-        return np.zeros(3), np.zeros(3)
+        return np.zeros(12), np.zeros(12)
 
 
 @jitclass
@@ -171,13 +170,9 @@ class LandmarkMeasure(core.Factor):
     def residual(self, values: list[core.Variable]) -> np.ndarray:
         x, l = values
 
-        theta, px, py = x
-        lx, ly = l
+        est_mm = x.q.apply(l - x.p)
 
-        angle = wrap2pi(np.arctan2(ly - py, lx - px) - theta)
-        r = np.sqrt((lx - px) ** 2 + (ly - py) ** 2)
-
-        return np.array([r, angle]) - self.mm
+        return est_mm - self.mm
 
     @property
     def residual_dim(self) -> int:

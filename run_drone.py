@@ -25,7 +25,7 @@ np.set_printoptions(precision=4)
 
 
 # Set up the simulation
-sys = DroneSim(5, 0.1, dist=0.6, plot_live=True)
+sys = DroneSim(5, 0.1, dist=0.3, plot_live=True)
 graph = core.Graph()
 vals = core.Variables()
 
@@ -68,12 +68,12 @@ for i, x in enumerate(xs[1:]):
 
 graph.add(FinalCost([X(sys.N)], sys.xg, Qf))
 
-vals, _ = graph.solve(vals, verbose=True, tol=1e-1, max_iter=2000)
+vals, _ = graph.solve(vals, verbose=False, tol=1e-1, max_iter=2000)
 print("Step 0 done", vals[P(0)])
 sys.plot(0, vals)
 
 graph.remove(idx_fix_params)
-graph.add(BoundedConstraint([P(0)], np.array([0.2, 0.2]), np.array([0.6, 0.6])))
+graph.add(BoundedConstraint([P(0)], np.array([0.4, 0.125]), np.array([0.6, 0.2])))
 
 # ------------------------- Iterate through the simulation ------------------------- #
 x = sys.x0.copy()
@@ -95,11 +95,11 @@ for i in range(sys.N):
         PastDynamics(
             [P(0), X(i), X(i + 1), U(i), W(i)],
             sys.dynamics,
-            np.eye(3) * sys.std_Q**2,
+            np.eye(12) * sys.std_Q**2,
         )
     )
     graph.add(FixConstraint([U(i)], u))
-    vals.add(W(i), np.zeros(3))
+    vals.add(W(i), np.zeros(12))
 
     # Process landmarks
     lm_new = set(z.keys()) - lm_seen
@@ -108,21 +108,16 @@ for i in range(sys.N):
         print("New landmarks detected", lm_new)
     x_est = vals[X(i + 1)]
     for lm in lm_new:
-        r, angle = z[lm]
-        theta, px, py = x_est
+        l = x_est.p + x_est.q.inverse().apply(z[lm])
+        vals.add(L(lm), l)
 
-        lx = px + r * np.cos(angle + theta)
-        ly = py + r * np.sin(angle + theta)
-
-        vals.add(L(lm), np.array([lx, ly]))
-
-        for j in range(i + 2, sys.N):
-            f_idx = graph.add(LandmarkAvoid([X(j), L(lm)], sys.dist))
-            # We want to remove this constraint on the timestep where we move from j-1 to j
-            indices[j - 1].append(f_idx)
+        # for j in range(i + 2, sys.N):
+        #     f_idx = graph.add(LandmarkAvoid([X(j), L(lm)], sys.dist))
+        #     # We want to remove this constraint on the timestep where we move from j-1 to j
+        #     indices[j - 1].append(f_idx)
 
     for idx, mm in z.items():
-        graph.add(LandmarkMeasure([X(i + 1), L(idx)], mm, np.eye(2) * sys.std_R**2))
+        graph.add(LandmarkMeasure([X(i + 1), L(idx)], mm, np.eye(3) * sys.std_R**2))
 
     if i < 1:
         continue
@@ -131,13 +126,11 @@ for i in range(sys.N):
 
     max_iter = 500
     if len(lm_new) > 0:
-        max_iter = 10_000
+        max_iter = 500
 
-    vals_new, info = graph.solve(vals, verbose=False, max_iter=max_iter, tol=1e-1)
+    vals_new, info = graph.solve(vals, verbose=True, max_iter=max_iter, tol=1e-1)
     print(info["status_msg"])
 
-    # TODO: Broke something with this...
-    # Probably isn't recompiling the jit
     c_after = graph.objective(x0=vals_new)
 
     accept = False
@@ -149,7 +142,7 @@ for i in range(sys.N):
     print(
         f"Step {i+1} done, accepted: {accept}",
         vals[P(0)],
-        vals[X(sys.N)],
+        vals[X(sys.N)].p,
         c_before - c_after,
     )
     sys.plot(i + 1, vals, gt)
