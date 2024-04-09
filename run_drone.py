@@ -25,14 +25,14 @@ np.set_printoptions(precision=4)
 
 
 # Set up the simulation
-sys = DroneSim(5, 0.1, dist=0.3, plot_live=True)
+sys = DroneSim(5, 0.1, dist=0.6, plot_live=True)#, filename="figures/drone{}.png")
 graph = core.Graph()
 vals = core.Variables()
 
 # # ------------------------- Setup the initial graph & values ------------------------- #
 vals.add(X(0), sys.x0)
 graph.add(FixConstraint([X(0)], vals[X(0)]))
-vals.add(P(0), sys.params)
+vals.add(P(0), sys.params * 1.0)
 idx_fix_params = graph.add(FixConstraint([P(0)], vals[P(0)]))
 
 # Q = np.diag(np.concatenate([np.ones(3), np.ones(3), 10 * np.ones(3), np.ones(3)]))
@@ -111,31 +111,31 @@ for i in range(sys.N):
         l = x_est.p + x_est.q.inverse().apply(z[lm])
         vals.add(L(lm), l)
 
-        # for j in range(i + 2, sys.N):
-        #     f_idx = graph.add(LandmarkAvoid([X(j), L(lm)], sys.dist))
-        #     # We want to remove this constraint on the timestep where we move from j-1 to j
-        #     indices[j - 1].append(f_idx)
+        for j in range(i + 2, sys.N):
+            f_idx = graph.add(LandmarkAvoid([X(j), L(lm)], sys.dist))
+            # We want to remove this constraint on the timestep where we move from j-1 to j
+            indices[j - 1].append(f_idx)
 
     for idx, mm in z.items():
         graph.add(LandmarkMeasure([X(i + 1), L(idx)], mm, np.eye(3) * sys.std_R**2))
 
-    if i < 1:
+    if i < 1:# or i % 2 == 0:
         continue
 
     c_before = graph.objective(x0=vals)
 
     max_iter = 500
     if len(lm_new) > 0:
-        max_iter = 500
+        max_iter = 1_000
 
-    vals_new, info = graph.solve(vals, verbose=True, max_iter=max_iter, tol=1e-1)
+    vals_new, info = graph.solve(vals, verbose=False, max_iter=max_iter, tol=1e-1)
     print(info["status_msg"])
 
     c_after = graph.objective(x0=vals_new)
 
     accept = False
     diff = c_before - c_after
-    if 1e6 > diff and diff > -1e4:
+    if 1e6 > diff and diff > -1e3:
         accept = True
         vals = vals_new
 

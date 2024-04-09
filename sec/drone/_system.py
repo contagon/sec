@@ -58,10 +58,11 @@ class DroneSim:
 
         self.x0 = DroneState.identity()
         self.xg = DroneState(
-            SO3.from_z_radians(np.pi / 4), np.zeros(3), np.array([5, 5, 5]), np.zeros(3)
+            SO3.from_z_radians(np.pi / 4), np.zeros(3), np.array([0, 0, 5]), np.zeros(3)
         )
-        x = np.array([1, 2.5, 4])
-        self.landmarks = np.array([[i, j, k] for i in x for j in x for k in x])
+        x = np.array([1, 2.5, 4]) - 2.5
+        z = np.array([1.5, 3.5])
+        self.landmarks = np.array([[i, j, k] for i in x for j in x for k in z])
 
         self.plot_started = False
         self.plot_live = plot_live
@@ -173,9 +174,15 @@ class DroneSim:
                 )
                 self.circle_est.append(surf)
 
-            self.ax[0].set_xlim([self.x0.p[0] - 1, self.xg.p[0] + 1])
-            self.ax[0].set_ylim([self.x0.p[1] - 1, self.xg.p[1] + 1])
-            self.ax[0].set_zlim([self.x0.p[2] - 1, self.xg.p[2] + 1])
+            min_x = min(np.min(self.landmarks[:,0]) - self.dist, self.x0.p[0], self.xg.p[0]) - 1
+            max_x = max(np.max(self.landmarks[:,0]) + self.dist, self.x0.p[0], self.xg.p[0]) + 1
+            min_y = min(np.min(self.landmarks[:,1]) - self.dist, self.x0.p[1], self.xg.p[1]) - 1
+            max_y = max(np.max(self.landmarks[:,1]) + self.dist, self.x0.p[1], self.xg.p[1]) + 1
+            min_z = min(np.min(self.landmarks[:,2]) - self.dist, self.x0.p[2], self.xg.p[2]) - 1
+            max_z = max(np.max(self.landmarks[:,2]) + self.dist, self.x0.p[2], self.xg.p[2]) + 1
+            self.ax[0].set_xlim([min_x, max_x])
+            self.ax[0].set_ylim([min_y, max_y])
+            self.ax[0].set_zlim([min_z, max_z])
             self.ax[0].set_aspect("equal")
 
             if self.plot_live:
@@ -207,9 +214,11 @@ class DroneSim:
         if "L" in s:
             L = s["L"]
             self.lm_est._offsets3d = (L[:, 0], L[:, 1], L[:, 2])
-            # for i, l in enumerate(L):
-            #     self.circle_est[i].set_verts(sphere_pts(l, self.dist))
-            #     self.circle_est[i].set_alpha(0.5)
+            for i, l in enumerate(L):
+                x, y, z = sphere_pts(l, self.dist)
+                pts = np.dstack([x, y, z])
+                self.circle_est[i].set_verts(pts)
+                self.circle_est[i].set_alpha(0.05)
 
         # GT
         if gt is not None:
