@@ -4,7 +4,7 @@ import jaxlie
 import jax
 import jax.numpy as np
 from typing import TypeVar, Union
-from .helpers import jitclass
+from .helpers import jitclass, jitmethod
 import jax_dataclasses as jdc
 
 GroupType = TypeVar("GroupType", bound=jaxlie.MatrixLieGroup)
