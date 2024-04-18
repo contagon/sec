@@ -1,18 +1,11 @@
 import sec.core as core
 import sec.symbols as sym
-from sec.pend import (
-    PendulumSim,
-    FixConstraint,
-    System,
-    FinalCost,
-    EncoderMeasure,
-    PastDynamics,
-    BoundedConstraint,
-)
+import sec.operators as op
+from sec.pend import PendulumSim, EncoderMeasure
+from sec.core import FixConstraint, System, BoundedConstraint, FinalCost, PastDynamics
 import jax
 import jax.numpy as np
 import matplotlib.pyplot as plt
-from tqdm import trange
 
 jax.config.update("jax_platforms", "cpu")
 jax.config.update("jax_enable_x64", True)
@@ -41,6 +34,7 @@ for i in range(sys.N):
             sys.xg,
             np.eye(2),
             0.1 * np.eye(1),
+            op.dim(sys.xg),
         )
     )
     indices[i].append(f_idx)
@@ -84,6 +78,7 @@ for i in range(sys.N):
             [sym.P(0), sym.X(i), sym.X(i + 1), sym.U(i), sym.W(i)],
             sys.dynamics,
             np.eye(2) * sys.std_Q**2,
+            op.dim(x),
         )
     )
     graph.add(FixConstraint([sym.U(i)], u))
