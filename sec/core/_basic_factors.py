@@ -16,6 +16,10 @@ class FixConstraint(core.Factor):
     value: np.ndarray
 
     @overrides
+    def hash(self):
+        return (hash(type(self)), self.constraints_dim, hash(type(self.value)))
+
+    @overrides
     def constraints(self, values: list[core.Variable]) -> np.ndarray:
         return op.sub(values[0], self.value)
 

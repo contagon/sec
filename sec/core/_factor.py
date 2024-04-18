@@ -15,6 +15,9 @@ from ..helpers import jacfwd, jacrev, grad
 class Factor:
     keys: list[str]
 
+    def hash(self):
+        return (hash(type(self)), self.constraints_dim)
+
     # ------------------------- Potential Overrides ------------------------- #
     # Nonlinear least-squares
     @property

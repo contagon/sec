@@ -25,6 +25,7 @@ def jitclass(cls: T) -> T:
     # JIT all methods.
     for f in filter(
         lambda f: not f.startswith("_")
+        and not "hash" in f
         and callable(getattr(cls, f))
         and "jit" not in getattr(cls, f).__repr__(),
         dir(cls),

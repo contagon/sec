@@ -112,3 +112,14 @@ def copy(X: Variable) -> Variable:
 def stack(pytrees, axis=0):
     results = jax.tree_map(lambda *values: np.stack(values, axis=axis), *pytrees)
     return results
+
+
+@jitmethod
+def rk4(dynamics: callable, params: jax.Array, x: jax.Array, u: jax.Array, dt: float):
+    # vanilla RK4
+    k1 = dt * dynamics(params, x, u)
+    k2 = dt * dynamics(params, add(x, k1 / 2), u)
+    k3 = dt * dynamics(params, add(x, k2 / 2), u)
+    k4 = dt * dynamics(params, add(x, k3), u)
+    delta = (k1 + 2 * k2 + 2 * k3 + k4) / 6
+    return add(x, delta)

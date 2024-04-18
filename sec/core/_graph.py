@@ -21,7 +21,7 @@ class Graph:
                 self.add(f)
 
     def add(self, factor):
-        key = (type(factor), factor.constraints_dim)
+        key = factor.hash()
         if key in self.factors:
             self.factors[key].append(factor)
         else:
