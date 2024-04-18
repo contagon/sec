@@ -43,10 +43,10 @@ class PendulumSim:
         self.plot_started = False
         self.plot_live = plot_live
         if snapshots is None:
-            snapshots = []
+            self.snapshots = []
         else:
             self.snapshots = snapshots
-        self.snapshots.append(self.N)
+        self.snapshots.append(self.N + 1)
 
         self.filename = filename
 
@@ -134,17 +134,17 @@ class PendulumSim:
             self._setup_ax()
 
             # fill in parameters
-            (self.l_plot,) = self.ax[-1].plot(
-                [], [], c=self.c[1], label=r"$\ell$ Estimate"
-            )
-            (self.m_plot,) = self.ax[-1].plot(
-                [], [], c=self.c[2], label=r"$m$ Estimate"
-            )
             self.ax[-1].plot(
                 [0, self.T], [self.params[0], self.params[0]], c=self.color_gt
             )
             self.ax[-1].plot(
                 [0, self.T], [self.params[1], self.params[1]], c=self.color_gt
+            )
+            (self.l_plot,) = self.ax[-1].plot(
+                [], [], c=self.c[2], label=r"$\ell$ Estimate"
+            )
+            (self.m_plot,) = self.ax[-1].plot(
+                [], [], c=self.c[3], label=r"$m$ Estimate"
             )
             self.ax[-1].set_xlim([-0.1, self.T + 0.1])
             self.ax[-1].set_ylim([self.params.min() - 0.15, self.params.max() + 0.15])

@@ -3,21 +3,23 @@ import sec.symbols as sym
 from sec.symbols import X, U, P, L, W
 from sec.wheel import (
     WheelSim,
+    LandmarkAvoid,
+    LandmarkMeasure,
+)
+from sec.core import (
     FixConstraint,
     System,
-    LandmarkAvoid,
     FinalCost,
-    PriorFactor,
-    LandmarkMeasure,
-    PastDynamics,
     BoundedConstraint,
     BoundedConstraintLambda,
+    PastDynamics,
 )
 import jax
 import jax.numpy as np
 import matplotlib.pyplot as plt
 from tqdm import trange
 from time import time
+import sec.operators as op
 
 jax.config.update("jax_platforms", "cpu")
 jax.config.update("jax_enable_x64", True)
@@ -32,7 +34,14 @@ def step(start, name):
 
 
 # Set up the simulation
-sys = WheelSim(5, 0.1, dist=0.6, params=np.array([0.4, 0.43]), plot_live=True)
+sys = WheelSim(
+    5,
+    0.1,
+    dist=0.6,
+    params=np.array([0.4, 0.43]),
+    plot_live=True,
+    snapshots=[0, 4, 12],  # could also do at 8 and like ~20 if can fit on page
+)
 graph = core.Graph()
 vals = core.Variables()
 
@@ -54,6 +63,7 @@ for i in range(sys.N):
             sys.xg,
             np.eye(3),
             0.1 * np.eye(2),
+            op.dim(sys.xg),
         )
     )
     indices[i].append(f_idx)
@@ -79,37 +89,6 @@ for i, x in enumerate(xs[1:]):
     vals.add(U(i), sys.perturb(2))
 
 graph.add(FinalCost([X(sys.N)], sys.xg, 1000 * np.eye(3)))
-graph.template = vals
-
-# t = step(start, "Setup")
-# graph.objective(vals.to_vec())
-# t = step(t, "Objective")
-# graph.gradient(vals.to_vec())
-# t = step(t, "Gradient")
-# graph.constraints(vals.to_vec())
-# t = step(t, "Constraints")
-# graph.constraints_bounds()
-# t = step(t, "constraints_bounds")
-# graph.jacobian(vals.to_vec())
-# t = step(t, "Jacobian")
-# graph.jacobianstructure()
-# t = step(t, "Jacobian Structure")
-# print()
-# graph.objective(vals.to_vec())
-# t = step(t, "Objective")
-# graph.gradient(vals.to_vec())
-# t = step(t, "Gradient")
-# graph.constraints(vals.to_vec())
-# t = step(t, "Constraints")
-# graph.constraints_bounds()
-# t = step(t, "constraints_bounds")
-# graph.jacobian(vals.to_vec())
-# t = step(t, "Jacobian")
-# graph.jacobianstructure()
-# t = step(t, "Jacobian Structure")
-
-# plt.show(block=True)
-# quit()
 
 vals, _ = graph.solve(vals, verbose=False, tol=1e-1, max_iter=2000)
 print("Step 0 done", vals[P(0)])
@@ -125,7 +104,7 @@ lm_seen = set()
 for i in range(sys.N):
     # Step from Xi to Xi+1 using Ui
     u = vals[U(i)]
-    x = sys.dynamics(sys.params, x, u)
+    x = sys.step(x, u)
     z = sys.measure(x)  # measure at Xi+1
     gt[X(i + 1)] = x.copy()
 
@@ -139,6 +118,7 @@ for i in range(sys.N):
             [P(0), X(i), X(i + 1), U(i), W(i)],
             sys.dynamics,
             np.eye(3) * sys.std_Q**2,
+            op.dim(x),
         )
     )
     graph.add(FixConstraint([U(i)], u))
@@ -179,13 +159,11 @@ for i in range(sys.N):
     vals_new, info = graph.solve(vals, verbose=False, max_iter=max_iter, tol=1e-1)
     print(info["status_msg"])
 
-    # TODO: Broke something with this...
-    # Probably isn't recompiling the jit
     c_after = graph.objective(x0=vals_new)
 
     accept = False
     diff = c_before - c_after
-    if 1e6 > diff and diff > -1e4:
+    if 1e6 > diff and diff > -1e2:
         accept = True
         vals = vals_new
 
