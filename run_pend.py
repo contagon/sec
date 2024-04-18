@@ -13,7 +13,9 @@ np.set_printoptions(precision=4)
 
 
 # Set up the simulation
-sys = PendulumSim(5, 0.1, max_u=1.5, plot_live=True)
+sys = PendulumSim(
+    5, 0.1, max_u=1.5, plot_live=False, snapshots=[0, 19, 25], filename="penulum.pdf"
+)
 graph = core.Graph()
 vals = core.Variables()
 
@@ -51,7 +53,7 @@ for i, x in enumerate(xs[1:]):
 
 graph.add(FinalCost([sym.X(sys.N)], sys.xg, 1000 * np.eye(2)))
 
-vals, _ = graph.solve(vals, verbose=True, max_iter=1000, check_derivative=False)
+vals, _ = graph.solve(vals, verbose=False, max_iter=1000, check_derivative=False)
 print("Step 0 done", vals[sym.P(0)])
 sys.plot(0, vals)
 

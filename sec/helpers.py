@@ -3,10 +3,23 @@ from jaxlie.manifold import rplus, zero_tangents
 import jax
 from typing_extensions import ParamSpec
 import jax.numpy as np
+import matplotlib
+import seaborn as sns
 
 AxisName = Any
 P = ParamSpec("P")
 T = TypeVar("T")
+
+
+def setup_plot():
+    matplotlib.rc("pdf", fonttype=42)
+    sns.set_context("paper")
+    sns.set_style("whitegrid")
+    sns.set_palette("colorblind")
+    c = sns.color_palette("colorblind")
+    # move gray to front for ground truth
+    # c.insert(0, (0.2, 0.2, 0.2))
+    return c
 
 
 def wrap2pi(theta):
