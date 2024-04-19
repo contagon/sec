@@ -25,14 +25,21 @@ np.set_printoptions(precision=4)
 
 
 # Set up the simulation
-sys = DroneSim(5, 0.1, dist=0.6, plot_live=True)#, filename="figures/drone{}.png")
+sys = DroneSim(
+    5,
+    0.1,
+    dist=1.0,
+    plot_live=False,
+    snapshots=[0, 4, 14],
+    filename="drone.pdf",
+)
 graph = core.Graph()
 vals = core.Variables()
 
 # # ------------------------- Setup the initial graph & values ------------------------- #
 vals.add(X(0), sys.x0)
 graph.add(FixConstraint([X(0)], vals[X(0)]))
-vals.add(P(0), sys.params * 1.0)
+vals.add(P(0), sys.params * 1.05)
 idx_fix_params = graph.add(FixConstraint([P(0)], vals[P(0)]))
 
 # Q = np.diag(np.concatenate([np.ones(3), np.ones(3), 10 * np.ones(3), np.ones(3)]))
@@ -119,8 +126,8 @@ for i in range(sys.N):
     for idx, mm in z.items():
         graph.add(LandmarkMeasure([X(i + 1), L(idx)], mm, np.eye(3) * sys.std_R**2))
 
-    if i < 1:# or i % 2 == 0:
-        continue
+    # if i < 1:  # or i % 2 == 0:
+    #     continue
 
     c_before = graph.objective(x0=vals)
 
@@ -135,7 +142,7 @@ for i in range(sys.N):
 
     accept = False
     diff = c_before - c_after
-    if 1e6 > diff and diff > -1e3:
+    if 1e6 > diff and diff > -1e4:
         accept = True
         vals = vals_new
 

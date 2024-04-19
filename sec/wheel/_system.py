@@ -170,8 +170,9 @@ class WheelSim:
             self.ax = [self.ax_all[i, j] for i in range(2) for j in range(half)]
 
             for ax in self.ax:
-                ax.set_xlim([self.x0[1] - 1, self.xg[1] + 1])
-                ax.set_ylim([self.x0[2] - 1, self.xg[2] + 1])
+                ax.set_xlim([self.x0[1] - 0.5, self.xg[1] + 0.5])
+                ax.set_ylim([self.x0[2] - 0.5, self.xg[2] + 0.5])
+                # ax.tick_params(labelleft=False, labelbottom=False)
                 ax.set_aspect("equal")
 
             # fill in first snapshot
@@ -187,7 +188,7 @@ class WheelSim:
             )
             self.ax_params[0].set_xlim([-0.1, self.T + 0.1])
             self.ax_params[0].set_ylim([0.2, 0.6])
-            self.ax_params[0].set_title("Model Parameters")
+            self.ax_params[0].set_title("Left Wheel Radius")
 
             self.ax_params[1].plot(
                 [0, self.T], [self.params[1], self.params[1]], c=self.color_gt
@@ -197,6 +198,7 @@ class WheelSim:
             )
             self.ax_params[1].set_xlim([-0.1, self.T + 0.1])
             self.ax_params[1].set_ylim([0.2, 0.6])
+            self.ax_params[1].set_title("Right Wheel Radius")
 
             self.fig.legend(
                 loc="lower center",

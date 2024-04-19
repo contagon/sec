@@ -14,7 +14,12 @@ np.set_printoptions(precision=4)
 
 # Set up the simulation
 sys = PendulumSim(
-    5, 0.1, max_u=1.5, plot_live=False, snapshots=[0, 19, 25], filename="penulum.pdf"
+    5,
+    0.1,
+    max_u=1.5,
+    plot_live=False,
+    snapshots=[0, 19, 25],
+    filename="pendulum.eps",
 )
 graph = core.Graph()
 vals = core.Variables()
@@ -112,4 +117,5 @@ for i in range(sys.N):
     )
     sys.plot(i + 1, vals, gt)
 
-plt.show(block=True)
+if sys.plot_live:
+    plt.show(block=True)

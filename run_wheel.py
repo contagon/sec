@@ -39,7 +39,8 @@ sys = WheelSim(
     0.1,
     dist=0.6,
     params=np.array([0.4, 0.43]),
-    plot_live=True,
+    plot_live=False,
+    filename="wheel.pdf",
     snapshots=[0, 4, 12],  # could also do at 8 and like ~20 if can fit on page
 )
 graph = core.Graph()
@@ -175,4 +176,5 @@ for i in range(sys.N):
     )
     sys.plot(i + 1, vals, gt)
 
-plt.show(block=True)
+if sys.plot_live:
+    plt.show(block=True)

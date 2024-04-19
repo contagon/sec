@@ -1,12 +1,13 @@
 import jax.numpy as np
 import jax
-from sec.helpers import jitmethod, wrap2pi, jitclass
+from sec.helpers import jitmethod, wrap2pi, jitclass, setup_plot
 import matplotlib.pyplot as plt
 import jax_dataclasses as jdc
 from jaxlie import SO3
 import sec.operators as op
 from sec.operators import DroneState
 import mpl_toolkits.mplot3d.axes3d as Axes3D
+import math
 
 
 @jitmethod
@@ -42,6 +43,7 @@ class DroneSim:
         params=np.array([0.5, 0.175]),  # [mass, L]
         baseline=1,
         plot_live=False,
+        snapshots=None,
         filename=None,
     ):
         self.T = T
@@ -63,9 +65,15 @@ class DroneSim:
         x = np.array([1, 2.5, 4]) - 2.5
         z = np.array([1.5, 3.5])
         self.landmarks = np.array([[i, j, k] for i in x for j in x for k in z])
+        self.params_est = np.zeros((0, 2))
 
         self.plot_started = False
         self.plot_live = plot_live
+        if snapshots is None:
+            self.snapshots = []
+        else:
+            self.snapshots = snapshots
+        self.snapshots.append(self.N + 1)
         self.filename = filename
 
     def getkey(self):
@@ -126,64 +134,120 @@ class DroneSim:
 
         return measure
 
+    def _setup_ax(self):
+        (self.traj_gt,) = self.ax[self.ax_num].plot(
+            [],
+            [],
+            [],
+            c=self.color_gt,
+            marker="o",
+            ms=3,
+        )
+        (self.traj_est,) = self.ax[self.ax_num].plot(
+            [], [], [], c=self.color_est, marker="o", ms=3
+        )
+        (self.traj_fut,) = self.ax[self.ax_num].plot(
+            [], [], [], c=self.color_fut, marker="o", ms=3
+        )
+
+        (self.drone1,) = self.ax[self.ax_num].plot([], [], [], c="k", marker="o", ms=3)
+        (self.drone2,) = self.ax[self.ax_num].plot([], [], [], c="k", marker="o", ms=3)
+
+        if self.landmarks.size > 0:
+            self.lm_est = self.ax[self.ax_num].scatter(
+                [], [], [], color=self.color_est, alpha=1.0
+            )
+            self.lm_true = self.ax[self.ax_num].scatter(
+                self.landmarks[:, 0],
+                self.landmarks[:, 1],
+                self.landmarks[:, 2],
+                color=self.color_gt,
+                alpha=0.5,
+            )
+
+        self.circle_est = []
+        # for l in self.landmarks:
+        #     surf = self.ax[self.ax_num].plot_surface(
+        #         *sphere_pts(l, self.dist), color=self.color_est, alpha=0.0
+        #     )
+        #     self.circle_est.append(surf)
+
+        self.ax[self.ax_num].set_title(f"i = {self.snapshots[self.ax_num]}", pad=-50)
+
     def plot(self, idx, vals, gt=None):
         import matplotlib.pyplot as plt
 
         if not self.plot_started:
+            self.c = setup_plot()
+            self.color_gt = self.c[7]
+            self.color_est = self.c[0]
+            self.color_fut = self.c[1]
+
+            # fmt: off
+            min_x = min(np.min(self.landmarks[:,0]), self.x0.p[0], self.xg.p[0]) - 0.5
+            max_x = max(np.max(self.landmarks[:,0]), self.x0.p[0], self.xg.p[0]) + 0.5
+            min_y = min(np.min(self.landmarks[:,1]), self.x0.p[1], self.xg.p[1]) - 0.5
+            max_y = max(np.max(self.landmarks[:,1]), self.x0.p[1], self.xg.p[1]) + 0.5
+            min_z = min(np.min(self.landmarks[:,2]), self.x0.p[2], self.xg.p[2]) - 0.5
+            max_z = max(np.max(self.landmarks[:,2]), self.x0.p[2], self.xg.p[2]) + 0.5
+            # fmt: on
+
+            # make figure
             self.plot_started = True
-            self.fig = plt.figure()
-            self.ax = self.fig.add_subplot(projection="3d")
-            self.ax = [self.ax]
+            self.fig = plt.figure(figsize=(9, 6))  # , layout="constrained")
+            self.ax = []
+            half = math.ceil(len(self.snapshots) / 2)
+            for i in range(2):
+                for j in range(half):
+                    ax = self.fig.add_subplot(
+                        2, half + 1, i * (half + 1) + j + 1, projection="3d"
+                    )
+                    ax.set_xlim([min_x, max_x])
+                    ax.set_ylim([min_y, max_y])
+                    ax.set_zlim([min_z, max_z])
+                    ax.view_init(elev=15, azim=25)
+                    ax.tick_params("x", labelcolor="white")
+                    ax.tick_params("y", labelcolor="white")
+                    ax.tick_params("z", labelcolor="white")
+                    ax.set_aspect("equal")
+                    self.ax.append(ax)
 
-            color_gt = "k"
-            color_est = "b"
-            color_fut = "r"
+            # fill in first snapshot
+            self.ax_num = 0
+            self._setup_ax()
 
-            (self.traj_gt,) = self.ax[0].plot(
-                [],
-                [],
-                [],
-                c=color_gt,
-                marker="o",
-                ms=3,
+            # fill in parameters
+            self.ax_params = [
+                self.fig.add_subplot(2, half + 1, half + 1),
+                self.fig.add_subplot(2, half + 1, 2 * half + 2),
+            ]
+            self.ax_params[0].plot(
+                [0, self.T], [self.params[0], self.params[0]], c=self.color_gt
             )
-            (self.traj_est,) = self.ax[0].plot(
-                [], [], [], c=color_est, marker="o", ms=3
+            (self.m_plot,) = self.ax_params[0].plot(
+                [], [], c=self.c[2], label=r"$m$ Estimate"
             )
-            (self.traj_fut,) = self.ax[0].plot(
-                [], [], [], c=color_fut, marker="o", ms=3
+            self.ax_params[0].set_xlim([-0.1, self.T + 0.1])
+            self.ax_params[0].set_ylim([0.4, 0.6])
+            self.ax_params[0].tick_params(pad=-3, labelbottom=False)
+            self.ax_params[0].set_title("Model Parameters")
+
+            self.ax_params[1].plot(
+                [0, self.T], [self.params[1], self.params[1]], c=self.color_gt
             )
+            (self.l_plot,) = self.ax_params[1].plot(
+                [], [], c=self.c[3], label=r"$\ell$ Estimate"
+            )
+            self.ax_params[1].set_xlim([-0.1, self.T + 0.1])
+            self.ax_params[1].set_ylim([0.125, 0.2])
+            self.ax_params[1].tick_params(pad=-3)
 
-            (self.drone1,) = self.ax[0].plot([], [], [], c=color_gt, marker="o", ms=3)
-            (self.drone2,) = self.ax[0].plot([], [], [], c=color_gt, marker="o", ms=3)
-
-            if self.landmarks.size > 0:
-                self.lm_est = self.ax[0].scatter([], [], [], c=color_est, alpha=1.0)
-                self.lm_true = self.ax[0].scatter(
-                    self.landmarks[:, 0],
-                    self.landmarks[:, 1],
-                    self.landmarks[:, 2],
-                    c=color_gt,
-                    alpha=0.5,
-                )
-
-            self.circle_est = []
-            for l in self.landmarks:
-                surf = self.ax[0].plot_surface(
-                    *sphere_pts(l, self.dist), color=color_est, alpha=0.0
-                )
-                self.circle_est.append(surf)
-
-            min_x = min(np.min(self.landmarks[:,0]) - self.dist, self.x0.p[0], self.xg.p[0]) - 1
-            max_x = max(np.max(self.landmarks[:,0]) + self.dist, self.x0.p[0], self.xg.p[0]) + 1
-            min_y = min(np.min(self.landmarks[:,1]) - self.dist, self.x0.p[1], self.xg.p[1]) - 1
-            max_y = max(np.max(self.landmarks[:,1]) + self.dist, self.x0.p[1], self.xg.p[1]) + 1
-            min_z = min(np.min(self.landmarks[:,2]) - self.dist, self.x0.p[2], self.xg.p[2]) - 1
-            max_z = max(np.max(self.landmarks[:,2]) + self.dist, self.x0.p[2], self.xg.p[2]) + 1
-            self.ax[0].set_xlim([min_x, max_x])
-            self.ax[0].set_ylim([min_y, max_y])
-            self.ax[0].set_zlim([min_z, max_z])
-            self.ax[0].set_aspect("equal")
+            self.fig.legend(
+                loc="lower center",
+                bbox_to_anchor=(0.5, -0.08),
+                fancybox=True,
+                ncol=5,
+            )
 
             if self.plot_live:
                 plt.ion()
@@ -214,11 +278,18 @@ class DroneSim:
         if "L" in s:
             L = s["L"]
             self.lm_est._offsets3d = (L[:, 0], L[:, 1], L[:, 2])
-            for i, l in enumerate(L):
-                x, y, z = sphere_pts(l, self.dist)
-                pts = np.dstack([x, y, z])
-                self.circle_est[i].set_verts(pts)
-                self.circle_est[i].set_alpha(0.05)
+            # for i, l in enumerate(L):
+            #     x, y, z = sphere_pts(l, self.dist)
+            #     pts = np.dstack([x, y, z])
+            #     self.circle_est[i].set_verts(pts)
+            #     self.circle_est[i].set_alpha(0.05)
+
+        P = s["P"]
+        t = np.linspace(0, self.T, self.N + 1)
+        while self.params_est.shape[0] < idx + 1:
+            self.params_est = np.vstack([self.params_est, P])
+        self.m_plot.set_data(t[: idx + 1], self.params_est[:, 0])
+        self.l_plot.set_data(t[: idx + 1], self.params_est[:, 1])
 
         # GT
         if gt is not None:
@@ -230,4 +301,11 @@ class DroneSim:
             plt.pause(0.001)
 
         if self.filename is not None:
+            plt.subplots_adjust(
+                left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.1, hspace=0.15
+            )
             plt.savefig(self.filename.format(idx))
+
+        if idx in self.snapshots:
+            self.ax_num += 1
+            self._setup_ax()

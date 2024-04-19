@@ -152,7 +152,7 @@ class PendulumSim:
 
             self.fig.legend(
                 loc="lower center",
-                bbox_to_anchor=(0.5, -0.08),
+                bbox_to_anchor=(0.5, -0.15),
                 fancybox=True,
                 ncol=5,
             )
