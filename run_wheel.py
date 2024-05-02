@@ -39,9 +39,9 @@ sys = WheelSim(
     0.1,
     dist=0.6,
     params=np.array([0.4, 0.43]),
-    plot_live=False,
+    plot_live=True,
     filename="wheel.pdf",
-    snapshots=[0, 4, 12],  # could also do at 8 and like ~20 if can fit on page
+    snapshots=[0, 4, 8, 12, 22],  # could also do at 8 and like ~20 if can fit on page
 )
 graph = core.Graph()
 vals = core.Variables()

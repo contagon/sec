@@ -29,8 +29,8 @@ sys = DroneSim(
     5,
     0.1,
     dist=1.0,
-    plot_live=False,
-    snapshots=[0, 4, 14],
+    plot_live=True,
+    snapshots=[0, 4, 8, 14, 22],
     filename="drone.pdf",
 )
 graph = core.Graph()

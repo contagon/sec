@@ -164,7 +164,7 @@ class WheelSim:
             self.plot_started = True
             half = math.ceil(len(self.snapshots) / 2)
             self.fig, self.ax_all = plt.subplots(
-                2, half + 1, figsize=(10, 6), layout="constrained"
+                2, half + 1, figsize=(8, 3.8), layout="constrained"
             )
             self.ax_params = [self.ax_all[0, half], self.ax_all[1, half]]
             self.ax = [self.ax_all[i, j] for i in range(2) for j in range(half)]
@@ -172,8 +172,11 @@ class WheelSim:
             for ax in self.ax:
                 ax.set_xlim([self.x0[1] - 0.5, self.xg[1] + 0.5])
                 ax.set_ylim([self.x0[2] - 0.5, self.xg[2] + 0.5])
-                # ax.tick_params(labelleft=False, labelbottom=False)
+                ax.tick_params("both", pad=-0.5)
                 ax.set_aspect("equal")
+
+            for ax in self.ax_params:
+                ax.tick_params("both", pad=-0.5)
 
             # fill in first snapshot
             self.ax_num = 0
@@ -242,7 +245,7 @@ class WheelSim:
             plt.pause(0.001)
 
         if self.filename is not None:
-            plt.savefig(self.filename.format(idx))
+            plt.savefig(self.filename.format(idx), bbox_inches="tight")
 
         if idx in self.snapshots:
             self.ax_num += 1

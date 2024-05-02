@@ -141,17 +141,20 @@ class DroneSim:
             [],
             c=self.color_gt,
             marker="o",
+            label="GT",
             ms=3,
         )
         (self.traj_est,) = self.ax[self.ax_num].plot(
-            [], [], [], c=self.color_est, marker="o", ms=3
+            [], [], [], c=self.color_est, marker="o", ms=3, label="Estimate"
         )
         (self.traj_fut,) = self.ax[self.ax_num].plot(
-            [], [], [], c=self.color_fut, marker="o", ms=3
+            [], [], [], c=self.color_fut, marker="o", ms=3, label="Plan"
         )
 
-        (self.drone1,) = self.ax[self.ax_num].plot([], [], [], c="k", marker="o", ms=3)
-        (self.drone2,) = self.ax[self.ax_num].plot([], [], [], c="k", marker="o", ms=3)
+        (self.drone1,) = self.ax[self.ax_num].plot(
+            [], [], [], c="k", marker="o", ms=2, label="Drone"
+        )
+        (self.drone2,) = self.ax[self.ax_num].plot([], [], [], c="k", marker="o", ms=2)
 
         if self.landmarks.size > 0:
             self.lm_est = self.ax[self.ax_num].scatter(
@@ -194,7 +197,7 @@ class DroneSim:
 
             # make figure
             self.plot_started = True
-            self.fig = plt.figure(figsize=(9, 6))  # , layout="constrained")
+            self.fig = plt.figure(figsize=(8, 4))  # , layout="constrained")
             self.ax = []
             half = math.ceil(len(self.snapshots) / 2)
             for i in range(2):
@@ -230,7 +233,7 @@ class DroneSim:
             self.ax_params[0].set_xlim([-0.1, self.T + 0.1])
             self.ax_params[0].set_ylim([0.4, 0.6])
             self.ax_params[0].tick_params(pad=-3, labelbottom=False)
-            self.ax_params[0].set_title("Model Parameters")
+            self.ax_params[0].set_title("Mass")
 
             self.ax_params[1].plot(
                 [0, self.T], [self.params[1], self.params[1]], c=self.color_gt
@@ -241,12 +244,13 @@ class DroneSim:
             self.ax_params[1].set_xlim([-0.1, self.T + 0.1])
             self.ax_params[1].set_ylim([0.125, 0.2])
             self.ax_params[1].tick_params(pad=-3)
+            self.ax_params[1].set_title("Arm Length")
 
             self.fig.legend(
                 loc="lower center",
                 bbox_to_anchor=(0.5, -0.08),
                 fancybox=True,
-                ncol=5,
+                ncol=6,
             )
 
             if self.plot_live:
@@ -297,14 +301,14 @@ class DroneSim:
             self.traj_gt.set_data_3d(X.p[:, 0], X.p[:, 1], X.p[:, 2])
 
         plt.draw()
+        plt.subplots_adjust(
+            left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.1, hspace=0.15
+        )
         if self.plot_live:
             plt.pause(0.001)
 
         if self.filename is not None:
-            plt.subplots_adjust(
-                left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.1, hspace=0.15
-            )
-            plt.savefig(self.filename.format(idx))
+            plt.savefig(self.filename.format(idx), bbox_inches="tight")
 
         if idx in self.snapshots:
             self.ax_num += 1

@@ -13,7 +13,7 @@ T = TypeVar("T")
 
 def setup_plot():
     matplotlib.rc("pdf", fonttype=42)
-    sns.set_context("notebook", font_scale=1.5)
+    sns.set_context("paper", font_scale=1.0)
     sns.set_style("whitegrid")
     sns.set_palette("colorblind")
     c = sns.color_palette("colorblind")

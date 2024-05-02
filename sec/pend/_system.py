@@ -120,7 +120,7 @@ class PendulumSim:
             self.fig, self.ax = plt.subplots(
                 1,
                 len(self.snapshots) + 1,
-                figsize=(12, 4),
+                figsize=(8, 2.5),
                 layout="constrained",
                 sharex=True,
             )

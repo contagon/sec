@@ -17,9 +17,9 @@ sys = PendulumSim(
     5,
     0.1,
     max_u=1.5,
-    plot_live=False,
+    plot_live=True,
     snapshots=[0, 19, 25],
-    filename="pendulum.eps",
+    filename="pendulum.pdf",
 )
 graph = core.Graph()
 vals = core.Variables()
