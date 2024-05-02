@@ -1,17 +1,22 @@
 import jax.numpy as np
 import jax
-from typing import Union, TypeVar
+from typing import Optional
 import jaxlie
-from ._helpers import jitclass
+from ..helpers import jitclass
 from ._variables import Variables, Variable
 import jax_dataclasses as jdc
 from functools import cached_property
+import sec.operators as op
+from ..helpers import jacfwd, jacrev, grad
 
 
 @jitclass
 @jdc.pytree_dataclass
 class Factor:
     keys: list[str]
+
+    def hash(self):
+        return (hash(type(self)), self.constraints_dim)
 
     # ------------------------- Potential Overrides ------------------------- #
     # Nonlinear least-squares
@@ -53,6 +58,7 @@ class Factor:
         return np.linalg.inv(self.W)
 
     # ------------------------- All autodiff jacobians & such ------------------------- #
+    # TODO: Use manifold diff operators!
     def residual_jac(self, values: list[Variable]) -> np.ndarray:
         return jax.jacfwd(self.residual)(values)
 
@@ -61,14 +67,24 @@ class Factor:
         return self.constraints_bounds[0].size
 
     # Defaults to using residual cost (similar speed to using J^T r, easier to code)
-    def cost_grad(self, values: list[Variable]):
-        return jax.grad(self.cost)(values)
+    def cost_grad(self, values: list[Variable], delta: Optional[list[Variable]] = None):
+        if delta is not None:
+            return grad(wrapper(self.cost))(delta, values)
+        else:
+            return grad(self.cost)(values)
 
-    def cost_hess(self, values: list[Variable]):
-        return jax.jacrev(jax.jacfwd(self.cost))(values)
+    def constraints_jac(
+        self, values: list[Variable], delta: Optional[list[Variable]] = None
+    ):
+        if delta is not None:
+            return jacfwd(wrapper(self.constraints))(delta, values)
+        else:
+            return jacfwd(self.constraints)(values)
 
-    def constraints_jac(self, values: list[Variable]):
-        return jax.jacfwd(self.constraints)(values)
 
-    def constraints_hess(self, values: list[Variable]):
-        return jax.jacrev(jax.jacfwd(self.constraints))(values)
+def wrapper(func):
+    def wrapped(delta, values):
+        together = [op.add(val, d) for val, d in zip(values, delta)]
+        return func(together)
+
+    return wrapped

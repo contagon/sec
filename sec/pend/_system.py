@@ -1,6 +1,6 @@
 import jax.numpy as np
 import jax
-from sec.core import jitmethod
+from sec.helpers import jitmethod, setup_plot
 import matplotlib.pyplot as plt
 
 
@@ -19,11 +19,12 @@ class PendulumSim:
         self,
         T,
         dt,
-        std_Q=0.01,
-        std_R=0.01,
+        std_Q=0.005,
+        std_R=0.005,
         max_u=3,
         params=np.array([1, 0.5]),  # [m, l]
         plot_live=False,
+        snapshots=None,
         filename=None,
     ):
         self.T = T
@@ -37,9 +38,16 @@ class PendulumSim:
 
         self.x0 = np.array([1e-6, 0])
         self.xg = np.array([np.pi, 0])
+        self.params_est = np.zeros([0, 2])
 
         self.plot_started = False
         self.plot_live = plot_live
+        if snapshots is None:
+            self.snapshots = []
+        else:
+            self.snapshots = snapshots
+        self.snapshots.append(self.N + 1)
+
         self.filename = filename
 
     def getkey(self):
@@ -73,51 +81,81 @@ class PendulumSim:
         subkey = self.getkey()
         return x[0:1] + jax.random.normal(subkey, (1,)) * self.std_R
 
+    def _setup_ax(self):
+        self.traj_gt = self.ax[self.ax_num].plot(
+            [],
+            [],
+            c=self.color_gt,
+            marker="o",
+            label="GT",
+            ms=3,
+        )
+        (self.traj_est,) = self.ax[self.ax_num].plot(
+            [],
+            [],
+            c=self.color_est,
+            marker="o",
+            label="Estimate",
+            ms=3,
+        )
+        (self.traj_fut,) = self.ax[self.ax_num].plot(
+            [], [], c=self.color_fut, marker="o", label="Plan", ms=3
+        )
+
+        self.ax[self.ax_num].set_xlim([-0.1, self.T + 0.1])
+        self.ax[self.ax_num].set_ylim([-1.2, np.pi + 0.3])
+        self.ax[self.ax_num].set_title(f"i = {self.snapshots[self.ax_num]}")
+
     def plot(self, idx, vals, gt=None):
         import matplotlib.pyplot as plt
 
         if not self.plot_started:
+            self.c = setup_plot()
+            self.color_gt = self.c[7]
+            self.color_est = self.c[0]
+            self.color_fut = self.c[1]
+
+            # make figure
             self.plot_started = True
-            self.fig, self.ax = plt.subplots(1, 2)
-            # self.ax = [self.ax]
-
-            color_gt = "k"
-            color_est = "b"
-            color_fut = "r"
-
-            self.traj_gt = self.ax[0].plot(
-                [],
-                [],
-                c=color_gt,
-                marker="o",
-                label="Estimate",
-                ms=3,
+            self.fig, self.ax = plt.subplots(
+                1,
+                len(self.snapshots) + 1,
+                figsize=(12, 4),
+                layout="constrained",
+                sharex=True,
             )
-            (self.traj_est,) = self.ax[0].plot(
-                [],
-                [],
-                c=color_est,
-                marker="o",
-                label="Estimate",
-                ms=3,
-            )
-            (self.traj_fut,) = self.ax[0].plot(
-                [], [], c=color_fut, marker="o", label="Plan", ms=3
-            )
+            for ax in self.ax[1:-1]:
+                ax.tick_params(labelleft=False)
+            self.ax[0].set_ylabel(r"$\theta$")
+            self.ax[len(self.snapshots) // 2].set_xlabel("Time")
 
-            (self.u_fut,) = self.ax[1].plot(
-                [], [], c=color_fut, ms=3, marker="o", label="u"
-            )
-            (self.u_est,) = self.ax[1].plot(
-                [], [], c=color_est, ms=3, marker="o", label="u_gt"
-            )
+            # fill in first snapshot
+            self.ax_num = 0
+            self._setup_ax()
 
-            l = self.params[1]
-            self.ax[0].set_xlim([-0.1, self.T + 0.1])
-            self.ax[0].set_ylim([-0.8, np.pi + 1])
+            # fill in parameters
+            self.ax[-1].plot(
+                [0, self.T], [self.params[0], self.params[0]], c=self.color_gt
+            )
+            self.ax[-1].plot(
+                [0, self.T], [self.params[1], self.params[1]], c=self.color_gt
+            )
+            (self.l_plot,) = self.ax[-1].plot(
+                [], [], c=self.c[2], label=r"$\ell$ Estimate"
+            )
+            (self.m_plot,) = self.ax[-1].plot(
+                [], [], c=self.c[3], label=r"$m$ Estimate"
+            )
+            self.ax[-1].set_xlim([-0.1, self.T + 0.1])
+            self.ax[-1].set_ylim([self.params.min() - 0.15, self.params.max() + 0.15])
+            self.ax[-1].set_title("Model Parameters")
 
-            self.ax[1].set_xlim([-0.1, self.T + 0.1])
-            self.ax[1].set_ylim([-1.5 * self.max_u, 1.5 * self.max_u])
+            self.fig.legend(
+                loc="lower center",
+                bbox_to_anchor=(0.5, -0.15),
+                fancybox=True,
+                ncol=5,
+            )
 
             if self.plot_live:
                 plt.ion()
@@ -131,17 +169,23 @@ class PendulumSim:
         self.traj_est.set_data(t[: idx + 1], X[: idx + 1])
         self.traj_fut.set_data(t[idx:], X[idx:])
 
-        U = s["U"][:, 0]
-        if idx + 1 < len(U):
-            self.u_est.set_data(t[: idx + 1], U[: idx + 1])
-        self.u_fut.set_data(t[idx:-1], U[idx:])
+        P = s["P"]
+        while self.params_est.shape[0] < idx + 1:
+            self.params_est = np.vstack([self.params_est, P])
+        self.l_plot.set_data(t[: idx + 1], self.params_est[:, 0])
+        self.m_plot.set_data(t[: idx + 1], self.params_est[:, 1])
 
         if gt is not None:
             X = gt.stacked()["X"]
             self.traj_gt[0].set_data(t[: len(X)], X[:, 0])
 
         plt.draw()
-        plt.pause(0.001)
+        if self.plot_live:
+            plt.pause(0.001)
 
         if self.filename is not None:
-            plt.savefig(self.filename.format(idx))
+            plt.savefig(self.filename.format(idx), dpi=300, bbox_inches="tight")
+
+        if idx in self.snapshots:
+            self.ax_num += 1
+            self._setup_ax()

@@ -1,18 +1,11 @@
 import sec.core as core
 import sec.symbols as sym
-from sec.pend import (
-    PendulumSim,
-    FixConstraint,
-    System,
-    FinalCost,
-    EncoderMeasure,
-    PastDynamics,
-    BoundedConstraint,
-)
+import sec.operators as op
+from sec.pend import PendulumSim, EncoderMeasure
+from sec.core import FixConstraint, System, BoundedConstraint, FinalCost, PastDynamics
 import jax
 import jax.numpy as np
 import matplotlib.pyplot as plt
-from tqdm import trange
 
 jax.config.update("jax_platforms", "cpu")
 jax.config.update("jax_enable_x64", True)
@@ -20,7 +13,14 @@ np.set_printoptions(precision=4)
 
 
 # Set up the simulation
-sys = PendulumSim(4, 0.1, max_u=1, plot_live=True)
+sys = PendulumSim(
+    5,
+    0.1,
+    max_u=1.5,
+    plot_live=False,
+    snapshots=[0, 19, 25],
+    filename="pendulum.eps",
+)
 graph = core.Graph()
 vals = core.Variables()
 
@@ -41,6 +41,7 @@ for i in range(sys.N):
             sys.xg,
             np.eye(2),
             0.1 * np.eye(1),
+            op.dim(sys.xg),
         )
     )
     indices[i].append(f_idx)
@@ -55,14 +56,14 @@ for i, x in enumerate(xs[1:]):
     vals.add(sym.X(i + 1), x + sys.perturb(2))
     vals.add(sym.U(i), sys.perturb(1))
 
-graph.add(FinalCost([sym.X(sys.N)], sys.xg, 100 * np.eye(2)))
+graph.add(FinalCost([sym.X(sys.N)], sys.xg, 1000 * np.eye(2)))
 
-vals, _ = graph.solve(vals, verbose=True, max_iter=1000, check_derivative=False)
+vals, _ = graph.solve(vals, verbose=False, max_iter=1000, check_derivative=False)
 print("Step 0 done", vals[sym.P(0)])
 sys.plot(0, vals)
 
 graph.remove(idx_fix_params)
-graph.add(BoundedConstraint([sym.P(0)], np.array([0.8, 0.3]), np.array([1.4, 0.9])))
+graph.add(BoundedConstraint([sym.P(0)], np.array([0.9, 0.4]), np.array([1.1, 0.6])))
 
 # ------------------------- Iterate through the simulation ------------------------- #
 x = sys.x0.copy()
@@ -84,6 +85,7 @@ for i in range(sys.N):
             [sym.P(0), sym.X(i), sym.X(i + 1), sym.U(i), sym.W(i)],
             sys.dynamics,
             np.eye(2) * sys.std_Q**2,
+            op.dim(x),
         )
     )
     graph.add(FixConstraint([sym.U(i)], u))
@@ -94,18 +96,26 @@ for i in range(sys.N):
     if i < 3:
         continue
 
-    graph.template = vals
-    c_before = graph.objective(vals.to_vec())
+    c_before = graph.objective(x0=vals)
 
-    vals_new, info = graph.solve(vals, verbose=False, max_iter=500)
+    vals_new, info = graph.solve(vals, verbose=False, max_iter=500, tol=1e-2)
     print(info["status_msg"])
 
-    c_after = graph.objective(vals_new.to_vec())
+    c_after = graph.objective(x0=vals_new)
 
-    print(f"Step {i+1} done", c_before, c_after, c_before - c_after)
-    sys.plot(i + 1, vals, gt)
-    if c_before - c_after > -1e3:
-        print("Accepted", vals[sym.P(0)])
+    accept = False
+    diff = c_before - c_after
+    if 1e6 > diff and diff > -1e4:
+        accept = True
         vals = vals_new
 
-plt.show(block=True)
+    print(
+        f"Step {i+1} done, accepted: {accept}",
+        vals[sym.P(0)],
+        vals[sym.X(sys.N)],
+        c_before - c_after,
+    )
+    sys.plot(i + 1, vals, gt)
+
+if sys.plot_live:
+    plt.show(block=True)

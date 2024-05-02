@@ -1,7 +1,8 @@
 import jax.numpy as np
 import jax
-from sec.core import jitmethod, wrap2pi
+from sec.helpers import jitmethod, wrap2pi, setup_plot
 import matplotlib.pyplot as plt
+import math
 
 
 @jitmethod
@@ -27,6 +28,7 @@ class WheelSim:
         params=np.array([0.4, 0.4]),  # [r_l, r_r]
         baseline=1,
         plot_live=False,
+        snapshots=None,
         filename=None,
     ):
         self.T = T
@@ -45,9 +47,15 @@ class WheelSim:
         self.xg = np.array([np.pi / 4, 5, 5])
         x = np.array([1, 2.5, 4])
         self.landmarks = np.array([[i, j] for i in x for j in x])
+        self.params_est = np.zeros([0, 2])
 
         self.plot_started = False
         self.plot_live = plot_live
+        if snapshots is None:
+            self.snapshots = []
+        else:
+            self.snapshots = snapshots
+        self.snapshots.append(self.N + 1)
         self.filename = filename
 
     def getkey(self):
@@ -99,59 +107,105 @@ class WheelSim:
 
         return measure
 
+    def _setup_ax(self):
+        (self.traj_gt,) = self.ax[self.ax_num].plot(
+            [],
+            [],
+            c=self.color_gt,
+            marker="o",
+            label="GT",
+            ms=3,
+        )
+        (self.traj_est,) = self.ax[self.ax_num].plot(
+            [],
+            [],
+            c=self.color_est,
+            marker="o",
+            label="Estimate",
+            ms=3,
+        )
+        (self.traj_fut,) = self.ax[self.ax_num].plot(
+            [], [], c=self.color_fut, marker="o", label="Plan", ms=3
+        )
+
+        if self.landmarks.size > 0:
+            self.lm_est = self.ax[self.ax_num].scatter([], [], color=self.color_est)
+            self.lm_true = self.ax[self.ax_num].scatter(
+                self.landmarks[:, 0],
+                self.landmarks[:, 1],
+                color=self.color_gt,
+                alpha=0.5,
+            )
+
+            self.idx_dist = plt.Circle(
+                self.x0, self.range, fill=False, color=self.color_gt, alpha=0.3
+            )
+            self.ax[self.ax_num].add_artist(self.idx_dist)
+
+        self.circle_est = []
+        for l in self.landmarks:
+            self.circle_est.append(
+                plt.Circle(l, self.dist, fill=False, color=self.color_est, alpha=0.0)
+            )
+            self.ax[self.ax_num].add_artist(self.circle_est[-1])
+
+        self.ax[self.ax_num].set_title(f"i = {self.snapshots[self.ax_num]}")
+
     def plot(self, idx, vals, gt=None):
         import matplotlib.pyplot as plt
 
         if not self.plot_started:
+            self.c = setup_plot()
+            self.color_gt = self.c[7]
+            self.color_est = self.c[0]
+            self.color_fut = self.c[1]
+
+            # make figure
             self.plot_started = True
-            self.fig, self.ax = plt.subplots(1, 1)
-            self.ax = [self.ax]
-
-            color_gt = "k"
-            color_est = "b"
-            color_fut = "r"
-
-            (self.traj_gt,) = self.ax[0].plot(
-                [],
-                [],
-                c=color_gt,
-                marker="o",
-                label="Estimate",
-                ms=3,
+            half = math.ceil(len(self.snapshots) / 2)
+            self.fig, self.ax_all = plt.subplots(
+                2, half + 1, figsize=(10, 6), layout="constrained"
             )
-            (self.traj_est,) = self.ax[0].plot(
-                [],
-                [],
-                c=color_est,
-                marker="o",
-                label="Estimate",
-                ms=3,
+            self.ax_params = [self.ax_all[0, half], self.ax_all[1, half]]
+            self.ax = [self.ax_all[i, j] for i in range(2) for j in range(half)]
+
+            for ax in self.ax:
+                ax.set_xlim([self.x0[1] - 0.5, self.xg[1] + 0.5])
+                ax.set_ylim([self.x0[2] - 0.5, self.xg[2] + 0.5])
+                # ax.tick_params(labelleft=False, labelbottom=False)
+                ax.set_aspect("equal")
+
+            # fill in first snapshot
+            self.ax_num = 0
+            self._setup_ax()
+
+            # fill in parameters
+            self.ax_params[0].plot(
+                [0, self.T], [self.params[0], self.params[0]], c=self.color_gt
             )
-            (self.traj_fut,) = self.ax[0].plot(
-                [], [], c=color_fut, marker="o", label="Plan", ms=3
+            (self.rl_plot,) = self.ax_params[0].plot(
+                [], [], c=self.c[2], label=r"$r_l$ Estimate"
             )
+            self.ax_params[0].set_xlim([-0.1, self.T + 0.1])
+            self.ax_params[0].set_ylim([0.2, 0.6])
+            self.ax_params[0].set_title("Left Wheel Radius")
 
-            if self.landmarks.size > 0:
-                self.lm_est = self.ax[0].scatter([], [], c=color_est)
-                self.lm_true = self.ax[0].scatter(
-                    self.landmarks[:, 0], self.landmarks[:, 1], c=color_gt, alpha=0.5
-                )
+            self.ax_params[1].plot(
+                [0, self.T], [self.params[1], self.params[1]], c=self.color_gt
+            )
+            (self.rr_plot,) = self.ax_params[1].plot(
+                [], [], c=self.c[3], label=r"$r_r$ Estimate"
+            )
+            self.ax_params[1].set_xlim([-0.1, self.T + 0.1])
+            self.ax_params[1].set_ylim([0.2, 0.6])
+            self.ax_params[1].set_title("Right Wheel Radius")
 
-                self.idx_dist = plt.Circle(
-                    self.x0, self.range, fill=False, color=color_gt, alpha=0.3
-                )
-                self.ax[0].add_artist(self.idx_dist)
-
-            self.circle_est = []
-            for l in self.landmarks:
-                self.circle_est.append(
-                    plt.Circle(l, self.dist, fill=False, color=color_est, alpha=0.0)
-                )
-                self.ax[0].add_artist(self.circle_est[-1])
-
-            self.ax[0].set_xlim([self.x0[1] - 1, self.xg[1] + 1])
-            self.ax[0].set_ylim([self.x0[2] - 1, self.xg[2] + 1])
-            self.ax[0].set_aspect("equal")
+            self.fig.legend(
+                loc="lower center",
+                bbox_to_anchor=(0.5, -0.08),
+                fancybox=True,
+                ncol=5,
+            )
 
             if self.plot_live:
                 plt.ion()
@@ -172,6 +226,13 @@ class WheelSim:
 
             self.idx_dist.set(center=X[idx, 1:3])
 
+        P = s["P"]
+        t = np.linspace(0, self.T, self.N + 1)
+        while self.params_est.shape[0] < idx + 1:
+            self.params_est = np.vstack([self.params_est, P])
+        self.rl_plot.set_data(t[: idx + 1], self.params_est[:, 0])
+        self.rr_plot.set_data(t[: idx + 1], self.params_est[:, 1])
+
         if gt is not None:
             X = gt.stacked()["X"]
             self.traj_gt.set_data(X[:, 1], X[:, 2])
@@ -182,3 +243,7 @@ class WheelSim:
 
         if self.filename is not None:
             plt.savefig(self.filename.format(idx))
+
+        if idx in self.snapshots:
+            self.ax_num += 1
+            self._setup_ax()

@@ -7,24 +7,10 @@ from typing import TypeVar, Union
 from collections import OrderedDict
 from collections.abc import Iterable
 import sec.symbols as sym
+import sec.operators as op
 
 GroupType = TypeVar("GroupType", bound=jaxlie.MatrixLieGroup)
 Variable = Union[jax.Array, GroupType]
-
-
-def get_dim(val: Variable) -> int:
-    if isinstance(val, jaxlie.MatrixLieGroup):
-        return val.tangent_dim
-    else:
-        return val.size
-
-
-def add(val: Variable, delta: jax.Array) -> Variable:
-    assert delta.size == get_dim(val), "Dimension mismatch in add"
-    if isinstance(val, jaxlie.MatrixLieGroup):
-        return val * type(val).exp(val.zero())
-    else:
-        return val + delta
 
 
 def vec2var(vec: np.ndarray, template: Variables) -> Variable:
@@ -32,7 +18,7 @@ def vec2var(vec: np.ndarray, template: Variables) -> Variable:
     out = {}
     for key, val in template.vals.items():
         idx = template.start_idx(key)
-        dim = get_dim(val)
+        dim = op.dim(val)
         out[key] = vec[idx : idx + dim]
         idx += dim
     return Variables(out)
@@ -59,7 +45,7 @@ class Variables:
         self.idx_end = {}
         for key, val in self.vals.items():
             self.idx_start[key] = self.dim
-            self.dim += get_dim(val)
+            self.dim += op.dim(val)
             self.idx_end[key] = self.dim
 
     def copy(self):
@@ -84,9 +70,9 @@ class Variables:
         new_vals = self.vals.copy()
         idx = 0
         for key, val in self.vals.items():
-            delta = other[idx : idx + val.dim]
-            new_vals[key] = add(val, delta)
-            idx += get_dim(val)
+            delta = other[idx : idx + op.dim(val)]
+            new_vals[key] = op.add(val, delta)
+            idx += op.dim(val)
 
         return Variables(new_vals)
 
@@ -127,17 +113,16 @@ class Variables:
                 out[c] = []
             out[c].append(val)
 
-        return {k: np.vstack(v) for k, v in out.items()}
+        return {k: op.stack(v) for k, v in out.items()}
+
+    def _tree_flatten(self):
+        return jax.tree_util.tree_flatten(self.vals)
+
+    @classmethod
+    def _tree_unflatten(cls, aux_data, children):
+        return cls(jax.tree_util.tree_unflatten(aux_data, children))
 
 
-#     def _tree_flatten(self):
-#         return jax.tree_util.tree_flatten(self.vals)
-
-#     @classmethod
-#     def _tree_unflatten(cls, aux_data, children):
-#         return cls(jax.tree_util.tree_unflatten(aux_data, children))
-
-
-# jax.tree_util.register_pytree_node(
-#     Variables, Variables._tree_flatten, Variables._tree_unflatten
-# )
+jax.tree_util.register_pytree_node(
+    Variables, Variables._tree_flatten, Variables._tree_unflatten
+)
